@@ -20,10 +20,12 @@ INGEST_HOST = "https://eu.i.posthog.com"
 
 # Request headers that must not be forwarded verbatim.
 _DROP_REQUEST_HEADERS = {"host", "content-length", "connection"}
-# Response headers we drop: hop-by-hop, length/encoding (recomputed by Django), and
-# CORS headers (our own CorsMiddleware sets the correct ones for our allowed origins).
+# Response headers we drop: hop-by-hop, length (recomputed by Django), and CORS headers
+# (our own CorsMiddleware sets the correct ones). NOTE: Content-Encoding is deliberately
+# NOT dropped — we pass the upstream's compressed body through untouched so the browser
+# decodes it. PostHog's CDN serves the recorder as brotli/zstd, which Python `requests`
+# cannot decode; stripping the header while forwarding compressed bytes = corrupt JS.
 _DROP_RESPONSE_HEADERS = {
-    "content-encoding",
     "content-length",
     "transfer-encoding",
     "connection",
@@ -68,12 +70,18 @@ def posthog_proxy(request: HttpRequest, subpath: str) -> HttpResponse:
             headers=headers,
             timeout=_UPSTREAM_TIMEOUT,
             allow_redirects=False,
+            stream=True,
         )
+        # Read the RAW (still-encoded) body without letting requests auto-decode it, so
+        # the body and its Content-Encoding header stay consistent when passed to the
+        # browser. requests only decodes gzip/deflate — PostHog's brotli/zstd recorder
+        # would otherwise reach the browser as corrupt "plain" JS.
+        content = upstream.raw.read(decode_content=False)
     except requests.RequestException:
         return HttpResponse("Analytics upstream unavailable", status=502)
 
     response = HttpResponse(
-        upstream.content,
+        content,
         status=upstream.status_code,
         content_type=upstream.headers.get("Content-Type", "application/octet-stream"),
     )
@@ -83,5 +91,5 @@ def posthog_proxy(request: HttpRequest, subpath: str) -> HttpResponse:
             continue
         if lower.startswith("access-control-"):
             continue  # let CorsMiddleware own CORS
-        response[key] = value
+        response[key] = value  # includes Content-Encoding so the browser can decode
     return response
