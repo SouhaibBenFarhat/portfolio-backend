@@ -18,14 +18,17 @@ from django.views.decorators.csrf import csrf_exempt
 ASSET_HOST = "https://eu-assets.i.posthog.com"
 INGEST_HOST = "https://eu.i.posthog.com"
 
-# Request headers that must not be forwarded verbatim.
-_DROP_REQUEST_HEADERS = {"host", "content-length", "connection"}
-# Response headers we drop: hop-by-hop, length (recomputed by Django), and CORS headers
-# (our own CorsMiddleware sets the correct ones). NOTE: Content-Encoding is deliberately
-# NOT dropped — we pass the upstream's compressed body through untouched so the browser
-# decodes it. PostHog's CDN serves the recorder as brotli/zstd, which Python `requests`
-# cannot decode; stripping the header while forwarding compressed bytes = corrupt JS.
+# Request headers that must not be forwarded verbatim. We drop Accept-Encoding so the
+# upstream negotiates plain gzip/deflate with `requests` (which it decodes) instead of
+# the browser's brotli/zstd. PostHog's CDN serves brotli by default; `requests` can't
+# decode it, and forwarding brotli to the browser breaks strict decoders — Safari renders
+# the recorder script as corrupt bytes (`�`) and Session Replay never starts.
+_DROP_REQUEST_HEADERS = {"host", "content-length", "connection", "accept-encoding"}
+# Response headers we drop: hop-by-hop, and length/encoding (Django recomputes length;
+# `requests` already decoded the body, so we emit it as plain, un-encoded bytes). CORS
+# headers are dropped too so our own CorsMiddleware owns them.
 _DROP_RESPONSE_HEADERS = {
+    "content-encoding",
     "content-length",
     "transfer-encoding",
     "connection",
@@ -70,18 +73,15 @@ def posthog_proxy(request: HttpRequest, subpath: str) -> HttpResponse:
             headers=headers,
             timeout=_UPSTREAM_TIMEOUT,
             allow_redirects=False,
-            stream=True,
         )
-        # Read the RAW (still-encoded) body without letting requests auto-decode it, so
-        # the body and its Content-Encoding header stay consistent when passed to the
-        # browser. requests only decodes gzip/deflate — PostHog's brotli/zstd recorder
-        # would otherwise reach the browser as corrupt "plain" JS.
-        content = upstream.raw.read(decode_content=False)
     except requests.RequestException:
         return HttpResponse("Analytics upstream unavailable", status=502)
 
+    # `requests` transparently decodes the gzip/deflate it negotiated, so `.content` is
+    # the plain body. We return it un-encoded (Content-Encoding stripped), which every
+    # browser — including Safari — reads correctly.
     response = HttpResponse(
-        content,
+        upstream.content,
         status=upstream.status_code,
         content_type=upstream.headers.get("Content-Type", "application/octet-stream"),
     )
@@ -91,5 +91,5 @@ def posthog_proxy(request: HttpRequest, subpath: str) -> HttpResponse:
             continue
         if lower.startswith("access-control-"):
             continue  # let CorsMiddleware own CORS
-        response[key] = value  # includes Content-Encoding so the browser can decode
+        response[key] = value
     return response
