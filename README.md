@@ -51,6 +51,30 @@ posthog.init(KEY, {
 });
 ```
 
+### Proxy gotchas — why Session Replay silently broke
+
+Getting the proxy right for **Session Replay** took debugging three separate bugs. Each
+one produces the same confusing symptom: **events work, but no recordings appear** —
+because events run from the site's own JS bundle, while the replay recorder is lazy-loaded
+*from the proxy*.
+
+1. **Compressed assets must pass through untouched.** PostHog's CDN serves the recorder
+   script as **brotli/zstd**. Python `requests` can't decode those, so the proxy must NOT
+   strip `Content-Encoding` and forward the still-compressed bytes — the browser then
+   receives corrupt "JavaScript", the recorder gets stuck in `lazy_loading`, and nothing
+   records. The proxy reads the raw body (`upstream.raw.read(decode_content=False)`) and
+   **forwards `Content-Encoding`** so the browser decodes it natively.
+2. **Large request bodies must be allowed.** Recording snapshots exceed Django's 2.5 MB
+   `DATA_UPLOAD_MAX_MEMORY_SIZE` default, which returns a Django 400 *before* the request
+   reaches PostHog. Raised to **64 MB** (PostHog's recommendation) in settings.
+3. **Frontend persistence.** On the site, `posthog-js` must use `localStorage+cookie`
+   (not `memory`) persistence, or replay silently does not record.
+
+Regression tests in [`analytics_proxy/tests.py`](./analytics_proxy/tests.py) lock in (1)
+and (2): a >2.5 MB POST must reach upstream, and `Content-Encoding` must be preserved.
+Diagnosing it was fastest via a temporary `window.__ph = posthog` hook to read
+`posthog.sessionRecording.status` in the browser console.
+
 ## Local development
 
 ```bash
@@ -80,6 +104,11 @@ pytest -q
 
 CI (GitHub Actions) runs lint, format check, Django checks, a migrations-drift check,
 and the test suite on every push and PR to `main`.
+
+**Deploys are gated on the tests.** The Render build runs `pytest` as part of its
+`buildCommand` (see [`render.yaml`](./render.yaml)): if any test fails, the build fails,
+the deploy is aborted, and the previously-deployed version stays live. A red test suite
+can't reach production — this is what the reverse-proxy regression tests above protect.
 
 ## Deployment (Render)
 

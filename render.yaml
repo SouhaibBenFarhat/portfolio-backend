@@ -6,7 +6,12 @@ services:
     runtime: python
     plan: free
     region: frankfurt # EU, close to PostHog EU + the site's audience
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
+    # Tests run as part of the build: if `pytest` fails, the build fails and Render keeps
+    # the previous version live (deploys are gated on a green test suite). Dev deps are
+    # installed because they include pytest; prod only ever runs gunicorn.
+    # pytest runs with DEBUG=true so production's SECURE_SSL_REDIRECT doesn't 301 the
+    # test client; collectstatic then runs with the ambient (production) env.
+    buildCommand: "pip install -r requirements-dev.txt && DEBUG=true pytest -q && python manage.py collectstatic --noinput"
     startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60"
     healthCheckPath: /health
     autoDeploy: true
