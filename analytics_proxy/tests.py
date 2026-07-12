@@ -7,6 +7,7 @@ def _fake_upstream(*, status=200, content=b"ok", headers=None):
     response = MagicMock()
     response.status_code = status
     response.content = content
+    response.raw.read.return_value = content  # proxy reads the raw, un-decoded body
     response.headers = headers or {"Content-Type": "text/plain"}
     return response
 
@@ -43,18 +44,19 @@ def test_post_body_is_forwarded(mock_request):
 
 
 @patch("analytics_proxy.views.requests.request")
-def test_cors_and_encoding_headers_are_stripped(mock_request):
+def test_encoding_preserved_but_cors_stripped(mock_request):
+    # Content-Encoding MUST pass through (browser decodes brotli/zstd/gzip itself);
+    # upstream CORS headers are dropped so our own CorsMiddleware owns CORS.
     mock_request.return_value = _fake_upstream(
         headers={
-            "Content-Type": "text/plain",
-            "Content-Encoding": "gzip",
+            "Content-Type": "application/javascript",
+            "Content-Encoding": "br",
             "Access-Control-Allow-Origin": "https://evil.example",
         }
     )
-    response = Client().get("/ingest/decide/")
+    response = Client().get("/ingest/static/recorder.js")
 
-    assert "Content-Encoding" not in response
-    # Upstream's ACAO is dropped; our CorsMiddleware owns CORS instead.
+    assert response.get("Content-Encoding") == "br"
     assert response.get("Access-Control-Allow-Origin") != "https://evil.example"
 
 
