@@ -66,3 +66,15 @@ def test_upstream_failure_returns_502(mock_request):
     response = Client().get("/ingest/e/")
 
     assert response.status_code == 502
+
+
+@patch("analytics_proxy.views.requests.request")
+def test_large_recording_snapshot_is_not_rejected(mock_request):
+    # Session-recording snapshots can exceed Django's 2.5MB default body limit.
+    # DATA_UPLOAD_MAX_MEMORY_SIZE must be raised, or Django 400s before the proxy runs.
+    mock_request.return_value = _fake_upstream(content=b"1")
+    big_body = b"x" * (5 * 1024 * 1024)  # 5 MB
+    response = Client().post("/ingest/s/", data=big_body, content_type="text/plain")
+
+    assert response.status_code == 200
+    assert mock_request.call_args.kwargs["data"] == big_body

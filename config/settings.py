@@ -25,6 +25,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-key-do-not-use-in-prod")
 DEBUG = env_bool("DEBUG", default=True)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,.onrender.com")
 
+# Session-recording snapshot POSTs (proxied to PostHog at /ingest/s/) can be large —
+# PostHog recommends allowing ~64MB. Django's 2.5MB default rejects them with a 400
+# before they reach PostHog, which silently breaks Session Replay through the proxy.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024 * 1024  # 64 MB
+
 INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
