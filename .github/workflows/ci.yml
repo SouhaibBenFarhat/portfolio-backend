@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Format check (ruff)
+        run: ruff format --check .
+
+      - name: Django system checks
+        run: python manage.py check
+        env:
+          SECRET_KEY: ci-secret
+
+      - name: Migrations are up to date
+        run: python manage.py makemigrations --check --dry-run
+        env:
+          SECRET_KEY: ci-secret
+
+      - name: Tests
+        run: pytest -q
+        env:
+          SECRET_KEY: ci-secret
+          DEBUG: "true"
