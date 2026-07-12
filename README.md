@@ -91,6 +91,35 @@ This repo ships a [`render.yaml`](./render.yaml) Blueprint.
 
 `autoDeploy` is on, so every push to `main` redeploys.
 
+**Live:** https://portfolio-backend-2huw.onrender.com
+
+## Keeping the free instance awake
+
+Render's **free** web services spin down after ~15 minutes of inactivity, and the
+next request then pays a ~30–50s cold start while the container wakes. For an
+analytics proxy that's a real problem: the first visitor after an idle period (and
+any quick bounce during wake-up) can have their events dropped — exactly the traffic
+worth catching.
+
+Fix: a lightweight external health check keeps the instance warm. This project uses
+**[UptimeRobot](https://uptimerobot.com/)** (free) hitting `/health`:
+
+| Setting  | Value                                                    |
+| -------- | -------------------------------------------------------- |
+| Type     | HTTP(s)                                                  |
+| URL      | `https://portfolio-backend-2huw.onrender.com/health`     |
+| Interval | 5 minutes                                                |
+
+A 5-minute ping resets the idle timer (comfortably under the 15-min sleep) and, as a
+bonus, emails on downtime. One always-on service stays within Render's free
+750 instance-hours/month.
+
+> A GitHub Actions cron is **not** a good substitute here: its schedule is best-effort
+> (often delayed 5–15 min or skipped under load) and it auto-disables after 60 days
+> without repo activity — so it can silently let the instance sleep. A dedicated uptime
+> monitor is the reliable choice. The proper fix for zero cold starts is a paid
+> always-on plan (or a host whose free tier doesn't sleep, e.g. Koyeb).
+
 ## Roadmap
 
 - [x] Deployed running server + health check + CI
