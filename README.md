@@ -58,12 +58,15 @@ one produces the same confusing symptom: **events work, but no recordings appear
 because events run from the site's own JS bundle, while the replay recorder is lazy-loaded
 *from the proxy*.
 
-1. **Compressed assets must pass through untouched.** PostHog's CDN serves the recorder
-   script as **brotli/zstd**. Python `requests` can't decode those, so the proxy must NOT
-   strip `Content-Encoding` and forward the still-compressed bytes — the browser then
-   receives corrupt "JavaScript", the recorder gets stuck in `lazy_loading`, and nothing
-   records. The proxy reads the raw body (`upstream.raw.read(decode_content=False)`) and
-   **forwards `Content-Encoding`** so the browser decodes it natively.
+1. **Compression — don't forward the browser's `Accept-Encoding`.** PostHog's CDN serves
+   the recorder script as **brotli/zstd**, which Python `requests` can't decode. Two ways
+   to get this wrong: forwarding the compressed bytes without `Content-Encoding` (corrupt
+   JS in every browser), or forwarding them *with* `Content-Encoding: br` (works in Chrome
+   but **Safari renders it as corrupt `�` bytes** — WebKit's decoder is stricter). Either
+   way the recorder gets stuck in `lazy_loading` and nothing records. The fix: **drop the
+   browser's `Accept-Encoding`** so `requests` negotiates plain gzip with the upstream,
+   decodes it, and the proxy emits **plain, un-encoded JavaScript** that every browser
+   (Safari included) reads.
 2. **Large request bodies must be allowed.** Recording snapshots exceed Django's 2.5 MB
    `DATA_UPLOAD_MAX_MEMORY_SIZE` default, which returns a Django 400 *before* the request
    reaches PostHog. Raised to **64 MB** (PostHog's recommendation) in settings.
