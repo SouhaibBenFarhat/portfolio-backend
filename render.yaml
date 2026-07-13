@@ -34,8 +34,10 @@ services:
         fromDatabase:
           name: portfolio-db
           property: connectionString
-      - key: CHAT_MODEL # LiteLLM model id; provider prefix picks the API key
+      - key: CHAT_MODEL # primary LiteLLM model; provider prefix picks the API key
         value: "groq/llama-3.3-70b-versatile"
+      - key: CHAT_FALLBACK_MODEL # used if the primary model fails (quota/rate limit)
+        value: "gemini/gemini-2.0-flash"
       - key: GROQ_API_KEY # secret — set the real value in the Render dashboard
         sync: false
       - key: GEMINI_API_KEY # secret — set the real value in the Render dashboard

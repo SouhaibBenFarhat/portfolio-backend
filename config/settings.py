@@ -113,9 +113,11 @@ CORS_ALLOWED_ORIGINS = env_list(
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 
 # --- AI chat --------------------------------------------------------------
-# LiteLLM model id for the chat assistant. Provider prefix picks the provider and
-# its API key env var (e.g. "groq/..." → GROQ_API_KEY, "gemini/..." → GEMINI_API_KEY).
+# LiteLLM model ids. The chat tries CHAT_MODEL first; if it fails (e.g. a free-tier
+# quota/rate limit) before any text streams, it falls back to CHAT_FALLBACK_MODEL.
+# The provider prefix picks the API key env var ("groq/..." → GROQ_API_KEY, etc.).
 CHAT_MODEL = os.getenv("CHAT_MODEL", "groq/llama-3.3-70b-versatile")
+CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "gemini/gemini-2.0-flash")
 
 # GitHub, for the project/README tools. A token is optional but lifts the API rate
 # limit from 60/hour (anonymous) to 5000/hour.

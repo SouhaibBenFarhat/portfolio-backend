@@ -12,7 +12,7 @@ import uuid
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .agent import get_agent
+from .agent import get_agents
 from .models import Conversation, Message
 
 
@@ -66,25 +66,38 @@ async def chat_stream(request):
         conversation=conversation, role=Message.Role.USER, content=message
     )
 
-    agent = get_agent()
+    agents = get_agents()
 
     async def event_stream():
         yield _sse({"conversation_id": str(conversation.id)})
         reply_parts = []
-        try:
-            async for event in agent.astream_events({"messages": history}, version="v2"):
-                kind = event["event"]
-                if kind == "on_chat_model_stream":
-                    token = getattr(event["data"]["chunk"], "content", "") or ""
-                    if token:
-                        reply_parts.append(token)
-                        yield _sse({"text": token})
-                elif kind == "on_tool_start":
-                    yield _sse({"tool": event["name"], "status": "start"})
-                elif kind == "on_tool_end":
-                    yield _sse({"tool": event["name"], "status": "end"})
-        except Exception as exc:  # surface the failure instead of hanging the stream
-            yield _sse({"error": str(exc)})
+        emitted = False  # whether any text/tool frame has been sent to the client
+        error = None
+        # Per-turn failover: try each model in order. Only fall back to the next model
+        # if nothing has streamed yet — never switch models mid-answer.
+        for agent in agents:
+            error = None
+            try:
+                async for event in agent.astream_events({"messages": history}, version="v2"):
+                    kind = event["event"]
+                    if kind == "on_chat_model_stream":
+                        token = getattr(event["data"]["chunk"], "content", "") or ""
+                        if token:
+                            reply_parts.append(token)
+                            emitted = True
+                            yield _sse({"text": token})
+                    elif kind == "on_tool_start":
+                        emitted = True
+                        yield _sse({"tool": event["name"], "status": "start"})
+                    elif kind == "on_tool_end":
+                        yield _sse({"tool": event["name"], "status": "end"})
+                break  # this model succeeded
+            except Exception as exc:  # noqa: BLE001 — any failure triggers failover
+                error = exc
+                if emitted:
+                    break  # already streamed part of an answer — don't switch models
+        if error is not None and not emitted:
+            yield _sse({"error": str(error)})
 
         reply = "".join(reply_parts)
         if reply:

@@ -143,8 +143,9 @@ not scripted.
   - `get_facts`/`get_cv` (async ORM); GitHub tools (list projects, read READMEs).
   - Wire tools into the agent; stream real `on_tool_start`/`on_tool_end` events as
     SSE `tool` frames for the frontend animations.
-- **Phase 4 — Multi-model failover**
-  - LiteLLM fallback chain (Gemini → Groq); handle quota/rate-limit errors.
+- **Phase 4 — Multi-model failover** ✅
+  - Per-turn failover: one agent per model (Groq → Gemini). If the primary fails
+    before any text streams, retry the next; never switch models mid-answer.
 - **Phase 5 — Frontend + polish**
   - Vercel AI SDK; real tool-event animations; guardrails; rate limiting.
 
