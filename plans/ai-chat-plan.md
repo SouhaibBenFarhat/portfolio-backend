@@ -157,8 +157,13 @@ not scripted.
 - **Phase 4 — Multi-model failover** ✅
   - Per-turn failover: one agent per model (Groq → Gemini). If the primary fails
     before any text streams, retry the next; never switch models mid-answer.
-- **Phase 5 — Frontend + polish**
-  - Vercel AI SDK; real tool-event animations; guardrails; rate limiting.
+- **Phase 5 — Guardrails + rate limiting (backend)** ✅
+  - Per-IP rate limit (RequestLog, pruned each request); message-length cap;
+    history bounded to the most recent N messages; system-prompt guardrail
+    (on-topic + basic prompt-injection resistance).
+- **Phase 6 — Frontend**
+  - Astro React island + Vercel AI SDK wired to `/chat/stream`, with the real
+    tool-event animations. (Lives in the separate portfolio repo.)
 
 ## Frontend integration (resolved)
 

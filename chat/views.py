@@ -1,24 +1,46 @@
 """Chat endpoints.
 
 A LangGraph agent streams its reply token-by-token over Server-Sent Events, with
-conversation history loaded from and saved to the database so the assistant
-remembers context across messages. Tools and provider failover arrive in later
-phases.
+conversation history persisted so the assistant remembers context. The public
+endpoint is guarded by a per-IP rate limit, a message-length cap, and a bound on
+how much history is sent to the model.
 """
 
 import json
 import uuid
+from datetime import timedelta
 
+from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from .agent import build_agents
-from .models import Conversation, LLMCredential, Message
+from .models import Conversation, LLMCredential, Message, RequestLog
 
 
 def _sse(payload: dict) -> str:
     """Format a dict as a Server-Sent Events `data:` frame."""
     return f"data: {json.dumps(payload)}\n\n"
+
+
+def _client_ip(request) -> str:
+    """The caller's IP — the first X-Forwarded-For entry (Render sets it), else REMOTE_ADDR."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "") or "unknown"
+
+
+async def _is_rate_limited(ip: str) -> bool:
+    """True if this IP is over its allowance. Prunes old rows and logs this hit."""
+    cutoff = timezone.now() - timedelta(seconds=settings.CHAT_RATE_WINDOW_SECONDS)
+    await RequestLog.objects.filter(created_at__lt=cutoff).adelete()
+    recent = await RequestLog.objects.filter(ip=ip, created_at__gte=cutoff).acount()
+    if recent >= settings.CHAT_RATE_LIMIT:
+        return True
+    await RequestLog.objects.acreate(ip=ip)
+    return False
 
 
 async def _get_or_create_conversation(conversation_id) -> Conversation:
@@ -46,6 +68,9 @@ async def chat_stream(request):
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
 
+    if await _is_rate_limited(_client_ip(request)):
+        return JsonResponse({"error": "rate limit exceeded, try again later"}, status=429)
+
     try:
         payload = json.loads(request.body or b"{}")
     except json.JSONDecodeError:
@@ -54,14 +79,18 @@ async def chat_stream(request):
     message = (payload.get("message") or "").strip()
     if not message:
         return JsonResponse({"error": "message is required"}, status=400)
+    if len(message) > settings.CHAT_MAX_MESSAGE_LENGTH:
+        return JsonResponse({"error": "message is too long"}, status=400)
 
     conversation = await _get_or_create_conversation(payload.get("conversation_id"))
 
-    # Build the model's input from stored history plus the new message.
+    # Build the model's input from stored history plus the new message, bounded to the
+    # most recent messages so a long thread can't blow the context window or cost.
     history = [
         {"role": msg.role, "content": msg.content} async for msg in conversation.messages.all()
     ]
     history.append({"role": "user", "content": message})
+    history = history[-settings.CHAT_MAX_HISTORY_MESSAGES :]
     await Message.objects.acreate(
         conversation=conversation, role=Message.Role.USER, content=message
     )

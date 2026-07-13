@@ -79,6 +79,17 @@ class Document(models.Model):
         return self.title
 
 
+class RequestLog(models.Model):
+    """One row per chat request, used for per-IP rate limiting. Rows older than the
+    rate-limit window are pruned on each request, so the table stays small."""
+
+    ip = models.CharField(max_length=45, db_index=True)  # fits IPv6
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
 class LLMCredential(models.Model):
     """An LLM provider API key, managed in the admin. Multiple keys per provider
     are allowed and tried in order; the key is encrypted at rest."""
