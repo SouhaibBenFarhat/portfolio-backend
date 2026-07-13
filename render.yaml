@@ -40,7 +40,7 @@ services:
       - key: CHAT_MODEL # primary LiteLLM model; provider prefix picks the API key
         value: "gemini/gemini-2.5-flash"
       - key: CHAT_FALLBACK_MODEL # used if the primary model fails (quota/rate limit)
-        value: "groq/llama-3.3-70b-versatile"
+        value: "gemini/gemini-2.5-flash-lite"
       - key: GROQ_API_KEY # secret — set the real value in the Render dashboard
         sync: false
       - key: GEMINI_API_KEY # secret — set the real value in the Render dashboard

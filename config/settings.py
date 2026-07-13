@@ -119,7 +119,7 @@ CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 # quota/rate limit) before any text streams, it falls back to CHAT_FALLBACK_MODEL.
 # The provider prefix picks the API key env var ("groq/..." → GROQ_API_KEY, etc.).
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gemini/gemini-2.5-flash")
-CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "groq/llama-3.3-70b-versatile")
+CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "gemini/gemini-2.5-flash-lite")
 # Higher = more varied and conversational; lower = more focused/repetitive.
 CHAT_TEMPERATURE = float(os.getenv("CHAT_TEMPERATURE", "0.7"))
 

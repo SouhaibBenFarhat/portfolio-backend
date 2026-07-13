@@ -473,13 +473,13 @@ def test_llm_credential_is_encrypted_at_rest():
     assert "gsk_supersecret" not in raw
 
 
-def test_build_agents_builds_one_agent_per_key():
-    """Multiple keys for a provider each become an agent, in failover order."""
+def test_build_agents_builds_one_agent_per_model_and_key():
+    """Each (model, key) pair becomes an agent, in failover order."""
     from chat.agent import build_agents
 
-    # Two Groq keys + Gemini falling back to its env var → 3 agents total.
-    agents = build_agents({"groq": ["k1", "k2"]})
-    assert len(agents) == 3
+    # Two models (primary + fallback are both Gemini) × two Gemini keys → 4 agents.
+    agents = build_agents({"gemini": ["k1", "k2"]})
+    assert len(agents) == 4
 
 
 # --- Phase 5: rate limiting & guardrails ----------------------------------
