@@ -131,6 +131,13 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 # SECRET_KEY makes existing encrypted values unreadable (just re-enter the keys).
 FIELD_ENCRYPTION_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 
+# Guardrails for the public chat endpoint.
+CHAT_MAX_MESSAGE_LENGTH = int(os.getenv("CHAT_MAX_MESSAGE_LENGTH", "2000"))  # chars
+CHAT_MAX_HISTORY_MESSAGES = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "20"))  # sent to model
+# Rate limit: at most CHAT_RATE_LIMIT requests per IP per CHAT_RATE_WINDOW_SECONDS.
+CHAT_RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "20"))
+CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "600"))
+
 # --- Production hardening --------------------------------------------------
 if not DEBUG:
     # Render terminates TLS at its edge and forwards X-Forwarded-Proto.

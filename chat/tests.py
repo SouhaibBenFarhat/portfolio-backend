@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 from django.conf import settings
 from django.contrib import admin as django_admin
-from django.test import AsyncClient
+from django.test import AsyncClient, override_settings
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
@@ -146,6 +146,7 @@ def test_chat_stream_rejects_non_post():
     assert asyncio.run(_run()).status_code == 405
 
 
+@pytest.mark.django_db(transaction=True)
 def test_chat_stream_requires_a_message():
     async def _run():
         return await AsyncClient().post(
@@ -403,3 +404,68 @@ def test_build_agents_builds_one_agent_per_key():
     # Two Groq keys + Gemini falling back to its env var → 3 agents total.
     agents = build_agents({"groq": ["k1", "k2"]})
     assert len(agents) == 3
+
+
+# --- Phase 5: rate limiting & guardrails ----------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rate_limit_blocks_after_the_limit():
+    async def _run():
+        statuses = []
+        with (
+            override_settings(CHAT_RATE_LIMIT=2, CHAT_RATE_WINDOW_SECONDS=600),
+            patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
+        ):
+            client = AsyncClient()
+            for _ in range(3):
+                response = await client.post(
+                    "/chat/stream",
+                    data=json.dumps({"message": "hi"}),
+                    content_type="application/json",
+                )
+                statuses.append(response.status_code)
+                if response.status_code == 200:
+                    await _drain(response)
+        return statuses
+
+    assert asyncio.run(_run()) == [200, 200, 429]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_message_that_is_too_long_is_rejected():
+    async def _run():
+        with override_settings(CHAT_MAX_MESSAGE_LENGTH=10):
+            return await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "x" * 50}),
+                content_type="application/json",
+            )
+
+    assert asyncio.run(_run()).status_code == 400
+
+
+@pytest.mark.django_db(transaction=True)
+def test_history_sent_to_the_model_is_bounded():
+    recording = _RecordingAgent(reply="ok")
+
+    async def _run():
+        with (
+            override_settings(CHAT_MAX_HISTORY_MESSAGES=2),
+            patch("chat.views.build_agents", return_value=(recording,)),
+        ):
+            client = AsyncClient()
+            conversation_id = None
+            for i in range(4):
+                data = {"message": f"msg{i}"}
+                if conversation_id:
+                    data["conversation_id"] = conversation_id
+                response = await client.post(
+                    "/chat/stream", data=json.dumps(data), content_type="application/json"
+                )
+                conversation_id = _conversation_id_from(await _drain(response))
+        return recording.seen
+
+    seen = asyncio.run(_run())
+    assert all(len(messages) <= 2 for messages in seen)
+    assert max(len(messages) for messages in seen) == 2  # the cap is actually reached
