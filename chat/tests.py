@@ -477,8 +477,8 @@ def test_build_agents_builds_one_agent_per_model_and_key():
     """Each (model, key) pair becomes an agent, in failover order."""
     from chat.agent import build_agents
 
-    # Two models (primary + fallback are both Gemini) × two Gemini keys → 4 agents.
-    agents = build_agents({"gemini": ["k1", "k2"]})
+    # Two models (primary + fallback are both Mistral) × two Mistral keys → 4 agents.
+    agents = build_agents({"mistral": ["k1", "k2"]})
     assert len(agents) == 4
 
 

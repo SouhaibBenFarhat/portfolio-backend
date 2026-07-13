@@ -38,9 +38,11 @@ services:
           name: portfolio-db
           property: connectionString
       - key: CHAT_MODEL # primary LiteLLM model; provider prefix picks the API key
-        value: "gemini/gemini-2.5-flash"
+        value: "mistral/mistral-small-latest"
       - key: CHAT_FALLBACK_MODEL # used if the primary model fails (quota/rate limit)
-        value: "gemini/gemini-2.5-flash-lite"
+        value: "mistral/open-mistral-nemo"
+      - key: MISTRAL_API_KEY # secret — set the real value in the Render dashboard
+        sync: false
       - key: GROQ_API_KEY # secret — set the real value in the Render dashboard
         sync: false
       - key: GEMINI_API_KEY # secret — set the real value in the Render dashboard
