@@ -13,3 +13,10 @@ def test_index_describes_service():
     body = response.json()
     assert body["service"] == "portfolio-backend"
     assert "/ingest/<path>" in body["endpoints"]["analytics_proxy"]
+
+
+def test_favicon_is_served_as_svg():
+    response = Client().get("/favicon.ico")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "image/svg+xml"
+    assert b"<svg" in response.content

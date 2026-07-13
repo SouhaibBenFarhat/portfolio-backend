@@ -60,6 +60,14 @@ def _fake_model(reply: str):
     return GenericFakeChatModel(messages=iter([AIMessage(content=reply)]))
 
 
+def _model_stream_event(text: str) -> dict:
+    return {
+        "event": "on_chat_model_stream",
+        "name": "model",
+        "data": {"chunk": SimpleNamespace(content=text)},
+    }
+
+
 class _RecordingAgent:
     """Stands in for the compiled agent: records its inputs, streams a reply."""
 
@@ -67,9 +75,18 @@ class _RecordingAgent:
         self.seen = []
         self._reply = reply
 
-    async def astream(self, payload, stream_mode=None):
+    async def astream_events(self, payload, version=None):
         self.seen.append(payload["messages"])
-        yield SimpleNamespace(content=self._reply), {}
+        yield _model_stream_event(self._reply)
+
+
+class _ToolEventAgent:
+    """Stand-in that emits a tool-start/tool-end pair then a token."""
+
+    async def astream_events(self, payload, version=None):
+        yield {"event": "on_tool_start", "name": "get_facts", "data": {}}
+        yield {"event": "on_tool_end", "name": "get_facts", "data": {}}
+        yield _model_stream_event("Here you go")
 
 
 async def _drain(response) -> str:
@@ -96,7 +113,7 @@ def test_chat_stream_streams_tokens_via_langgraph():
     """A real LangGraph agent (with a fake model) streams SSE token frames."""
 
     async def _run():
-        agent = build_agent(model=_fake_model("Hello recruiter"))
+        agent = build_agent(model=_fake_model("Hello recruiter"), tools=[])
         with patch("chat.views.get_agent", return_value=agent):
             response = await AsyncClient().post(
                 "/chat/stream",
@@ -208,3 +225,97 @@ def test_fact_and_document_models_work():
 
     doc = Document.objects.create(slug="cv", title="Résumé", content="…")
     assert str(doc) == "Résumé"
+
+
+# --- Phase 3c: tools + step events ----------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stream_emits_tool_step_events():
+    """Tool start/end events from the agent become SSE `tool` frames."""
+
+    async def _run():
+        with patch("chat.views.get_agent", return_value=_ToolEventAgent()):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "what are your projects?"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"tool": "get_facts"' in body
+    assert '"status": "start"' in body
+    assert '"status": "end"' in body
+    assert '"text": "Here you go"' in body
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_get_facts_tool_reads_active_facts():
+    from chat.models import Fact
+    from chat.tools import get_facts
+
+    async def _run():
+        await Fact.objects.acreate(category="Personal", question="Hobbies", answer="Chess")
+        await Fact.objects.acreate(
+            category="Personal", question="Secret", answer="hidden", is_active=False
+        )
+        return await get_facts.ainvoke({"category": ""})
+
+    result = asyncio.run(_run())
+    assert "Hobbies: Chess" in result
+    assert "hidden" not in result  # inactive facts are excluded
+
+
+@pytest.mark.django_db(transaction=True)
+def test_get_cv_tool_reads_the_cv_document():
+    from chat.models import Document
+    from chat.tools import get_cv
+
+    async def _run():
+        await Document.objects.acreate(slug="cv", title="CV", content="10 years of Python")
+        return await get_cv.ainvoke({})
+
+    assert "10 years of Python" in asyncio.run(_run())
+
+
+def test_list_github_projects_tool_formats_repos():
+    from chat import tools
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [
+                {
+                    "name": "portfolio-backend",
+                    "language": "Python",
+                    "stargazers_count": 3,
+                    "description": "Django backend",
+                    "fork": False,
+                },
+                {"name": "a-fork", "fork": True, "stargazers_count": 0},
+            ]
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **k):
+            return _Resp()
+
+    async def _run():
+        with patch.object(tools.httpx, "AsyncClient", return_value=_Client()):
+            return await tools.list_github_projects.ainvoke({})
+
+    result = asyncio.run(_run())
+    assert "portfolio-backend" in result
+    assert "Django backend" in result
+    assert "a-fork" not in result  # forks are excluded

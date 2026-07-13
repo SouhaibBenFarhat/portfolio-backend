@@ -72,11 +72,17 @@ async def chat_stream(request):
         yield _sse({"conversation_id": str(conversation.id)})
         reply_parts = []
         try:
-            async for chunk, _meta in agent.astream({"messages": history}, stream_mode="messages"):
-                token = getattr(chunk, "content", "") or ""
-                if token:
-                    reply_parts.append(token)
-                    yield _sse({"text": token})
+            async for event in agent.astream_events({"messages": history}, version="v2"):
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    token = getattr(event["data"]["chunk"], "content", "") or ""
+                    if token:
+                        reply_parts.append(token)
+                        yield _sse({"text": token})
+                elif kind == "on_tool_start":
+                    yield _sse({"tool": event["name"], "status": "start"})
+                elif kind == "on_tool_end":
+                    yield _sse({"tool": event["name"], "status": "end"})
         except Exception as exc:  # surface the failure instead of hanging the stream
             yield _sse({"error": str(exc)})
 

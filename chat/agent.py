@@ -11,11 +11,17 @@ from django.conf import settings
 from langchain_litellm import ChatLiteLLM
 from langgraph.prebuilt import create_react_agent
 
+from .tools import get_cv, get_facts, get_repo_readme, list_github_projects
+
+TOOLS = [get_facts, get_cv, list_github_projects, get_repo_readme]
+
 SYSTEM_PROMPT = (
-    "You are the AI assistant on Souhaib Ben Farhat's developer portfolio. "
-    "You help recruiters and visitors learn about Souhaib — his projects, skills, "
-    "and experience. Be concise, friendly, and professional. If you don't know "
-    "something, say so plainly rather than inventing an answer."
+    "You are the AI assistant on Souhaib Ben Farhat's developer portfolio, helping "
+    "recruiters and visitors learn about him. Use your tools instead of guessing: "
+    "call get_facts for salary, availability, location, or hobbies; get_cv for "
+    "experience, skills, and education; list_github_projects to show his work; and "
+    "get_repo_readme to explain a specific project. Be concise, friendly, and "
+    "professional. If the tools don't have an answer, say so plainly."
 )
 
 
@@ -28,7 +34,7 @@ def build_agent(model=None, tools=None):
     """Build a LangGraph agent. `model` and `tools` are injectable for tests."""
     return create_react_agent(
         model or build_model(),
-        tools=tools or [],
+        tools=TOOLS if tools is None else tools,
         prompt=SYSTEM_PROMPT,
     )
 
