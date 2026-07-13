@@ -3,3 +3,11 @@ gunicorn>=23.0
 whitenoise>=6.7
 django-cors-headers>=4.4
 requests>=2.32
+
+# Database: Postgres in production via DATABASE_URL (psycopg 3 driver);
+# dj-database-url parses the URL, falling back to SQLite locally.
+dj-database-url>=2.2
+psycopg[binary]>=3.2
+
+# Async server for streaming endpoints (run via gunicorn's uvicorn worker).
+uvicorn>=0.30
