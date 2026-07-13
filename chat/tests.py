@@ -351,6 +351,42 @@ def test_list_github_projects_tool_formats_repos():
     assert "a-fork" not in result  # forks are excluded
 
 
+def test_list_github_projects_tool_handles_rate_limit_gracefully():
+    """A GitHub 403 (anonymous rate limit) returns a readable message, not an
+    exception that would abort the whole chat turn."""
+    import httpx
+
+    from chat import tools
+
+    class _Resp:
+        status_code = 403
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "rate limited",
+                request=httpx.Request("GET", "https://api.github.com"),
+                response=self,
+            )
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **k):
+            return _Resp()
+
+    async def _run():
+        with patch.object(tools.httpx, "AsyncClient", return_value=_Client()):
+            return await tools.list_github_projects.ainvoke({})
+
+    result = asyncio.run(_run())
+    assert "rate-limited" in result
+    assert "try again" in result
+
+
 # --- Phase 4: provider failover -------------------------------------------
 
 
