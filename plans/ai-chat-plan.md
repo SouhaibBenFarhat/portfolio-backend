@@ -136,8 +136,11 @@ not scripted.
 - **Phase 3a — Introduce LangGraph** ✅
   - Replace the direct LiteLLM call with a LangGraph agent (model + system persona,
     no tools yet), reading the stored history. Streaming + persistence unchanged.
-- **Phase 3b — Tools + admin**
-  - `Fact`/`Document` models + Django admin; `get_facts`/`get_cv`; GitHub tools.
+- **Phase 3b — Knowledge base + admin** ✅
+  - `Fact`/`Document` models; enable Django admin (login-protected editing UI);
+    Conversations viewable read-only.
+- **Phase 3c — Tools + step events**
+  - `get_facts`/`get_cv`; GitHub tools (list projects, read READMEs).
   - Wire tools into the agent; emit real step events for the frontend animations.
 - **Phase 4 — Multi-model failover**
   - LiteLLM fallback chain (Gemini → Groq); handle quota/rate-limit errors.
