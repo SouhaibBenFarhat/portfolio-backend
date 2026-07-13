@@ -6,7 +6,20 @@ Conversations are shown read-only so you can review chats without editing them.
 
 from django.contrib import admin
 
-from .models import Conversation, Document, Fact, Message
+from .models import Conversation, Document, Fact, LLMCredential, Message
+
+
+@admin.register(LLMCredential)
+class LLMCredentialAdmin(admin.ModelAdmin):
+    list_display = ("provider", "label", "masked_key", "is_active", "updated_at")
+    list_filter = ("provider", "is_active")
+    list_editable = ("is_active",)
+    search_fields = ("provider", "label")
+
+    @admin.display(description="key")
+    def masked_key(self, obj):
+        key = obj.api_key or ""
+        return f"…{key[-4:]}" if len(key) >= 4 else "····"
 
 
 @admin.register(Fact)

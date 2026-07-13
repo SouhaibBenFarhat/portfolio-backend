@@ -12,8 +12,8 @@ import uuid
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .agent import get_agents
-from .models import Conversation, Message
+from .agent import build_agents
+from .models import Conversation, LLMCredential, Message
 
 
 def _sse(payload: dict) -> str:
@@ -66,7 +66,12 @@ async def chat_stream(request):
         conversation=conversation, role=Message.Role.USER, content=message
     )
 
-    agents = get_agents()
+    # API keys come from the admin (encrypted), grouped by provider and tried in
+    # order; a provider with no admin key falls back to its env var.
+    provider_keys: dict[str, list[str]] = {}
+    async for cred in LLMCredential.objects.filter(is_active=True):
+        provider_keys.setdefault(cred.provider, []).append(cred.api_key)
+    agents = build_agents(provider_keys)
 
     async def event_stream():
         yield _sse({"conversation_id": str(conversation.id)})

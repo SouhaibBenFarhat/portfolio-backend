@@ -6,6 +6,8 @@ locally and in production. Safe defaults let it boot with zero setup for local d
 production values are injected by the host (see render.yaml).
 """
 
+import base64
+import hashlib
 import os
 from pathlib import Path
 
@@ -123,6 +125,11 @@ CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "gemini/gemini-2.0-flash"
 # limit from 60/hour (anonymous) to 5000/hour.
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "SouhaibBenFarhat")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+
+# Fernet key for encrypting secrets at rest (LLM API keys stored in the admin).
+# Derived from SECRET_KEY so there's no separate env var to manage. Note: rotating
+# SECRET_KEY makes existing encrypted values unreadable (just re-enter the keys).
+FIELD_ENCRYPTION_KEY = base64.urlsafe_b64encode(hashlib.sha256(SECRET_KEY.encode()).digest())
 
 # --- Production hardening --------------------------------------------------
 if not DEBUG:

@@ -1,11 +1,11 @@
 """The chat agent, built with LangGraph.
 
-Phase 3a: a model-only agent (no tools yet) with a system persona. The model is
-routed through LiteLLM so the provider is swappable, and is injectable so tests
-can pass a fake model (no API key needed). Tools arrive in Phase 3b.
+A LangGraph agent (system persona + tools) runs the chat. The model is routed
+through LiteLLM, so the provider and API key are swappable. API keys come from the
+admin-managed LLMCredential rows (multiple per provider, tried in order), falling
+back to env vars. Agents are cached by the set of keys in use, so rotating a key
+in the admin rebuilds them on the next request.
 """
-
-from functools import lru_cache
 
 from django.conf import settings
 from langchain_litellm import ChatLiteLLM
@@ -24,10 +24,15 @@ SYSTEM_PROMPT = (
     "professional. If the tools don't have an answer, say so plainly."
 )
 
+_AGENTS_CACHE: dict = {}
 
-def build_model(model_id: str):
-    """A chat model routed through LiteLLM for the given model id."""
-    return ChatLiteLLM(model=model_id, streaming=True)
+
+def build_model(model_id: str, api_key: str | None = None):
+    """A chat model routed through LiteLLM. `api_key` overrides the env-var key."""
+    kwargs = {"model": model_id, "streaming": True}
+    if api_key:
+        kwargs["api_key"] = api_key
+    return ChatLiteLLM(**kwargs)
 
 
 def build_agent(model=None, tools=None):
@@ -39,11 +44,27 @@ def build_agent(model=None, tools=None):
     )
 
 
-@lru_cache(maxsize=1)
-def get_agents():
-    """The production agents, one per model, tried in order (primary then fallback).
+def _provider_of(model_id: str) -> str:
+    return model_id.split("/", 1)[0]
 
-    Compiled once and reused across requests.
+
+def build_agents(provider_keys: dict) -> tuple:
+    """One agent per (model, key), in failover order.
+
+    `provider_keys` maps a provider to its active keys, e.g. {"groq": ["k1", "k2"]}.
+    A provider with no key uses its env var. Result is cached by the exact keys in
+    use, so a change in the admin rebuilds on the next request.
     """
     model_ids = [m for m in (settings.CHAT_MODEL, settings.CHAT_FALLBACK_MODEL) if m]
-    return tuple(build_agent(model=build_model(model_id)) for model_id in model_ids)
+    plan = [
+        (model_id, key)
+        for model_id in model_ids
+        for key in (provider_keys.get(_provider_of(model_id)) or [None])
+    ]
+    signature = tuple(plan)
+    if signature not in _AGENTS_CACHE:
+        _AGENTS_CACHE.clear()  # keep only the current key set
+        _AGENTS_CACHE[signature] = tuple(
+            build_agent(model=build_model(model_id, key)) for model_id, key in plan
+        )
+    return _AGENTS_CACHE[signature]
