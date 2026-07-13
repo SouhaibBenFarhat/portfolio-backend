@@ -66,15 +66,6 @@ class _FakeStream:
             yield _chunk(token)
 
 
-def test_demo_page_renders():
-    async def _get():
-        return await AsyncClient().get("/chat/")
-
-    response = asyncio.run(_get())
-    assert response.status_code == 200
-    assert b"Chat streaming demo" in response.content
-
-
 def test_chat_stream_streams_tokens_as_sse():
     """POST a message → get token frames then a done frame, all Server-Sent Events."""
 

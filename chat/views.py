@@ -10,18 +10,12 @@ import json
 import litellm
 from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
-from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
 
 def _sse(payload: dict) -> str:
     """Format a dict as a Server-Sent Events `data:` frame."""
     return f"data: {json.dumps(payload)}\n\n"
-
-
-def demo_page(request):
-    """A minimal browser page to test streaming during development."""
-    return render(request, "chat/demo.html")
 
 
 @csrf_exempt
