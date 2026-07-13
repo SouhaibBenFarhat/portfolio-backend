@@ -9,4 +9,5 @@ urlpatterns = [
     path("health", health, name="health"),
     path("healthz", health),  # common k8s-style alias
     path("ingest/", include("analytics_proxy.urls")),
+    path("chat/", include("chat.urls")),
 ]

@@ -10,8 +10,13 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load a local .env for development. Existing env vars win, so production values
+# injected by the host (Render) are never overridden.
+load_dotenv(BASE_DIR / ".env")
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -91,6 +96,11 @@ CORS_ALLOWED_ORIGINS = env_list(
     "http://localhost:4321,https://souhaibbenfarhat.github.io",
 )
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+
+# --- AI chat --------------------------------------------------------------
+# LiteLLM model id for the chat assistant. Provider prefix picks the provider and
+# its API key env var (e.g. "groq/..." → GROQ_API_KEY, "gemini/..." → GEMINI_API_KEY).
+CHAT_MODEL = os.getenv("CHAT_MODEL", "groq/llama-3.3-70b-versatile")
 
 # --- Production hardening --------------------------------------------------
 if not DEBUG:
