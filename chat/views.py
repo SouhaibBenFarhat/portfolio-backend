@@ -24,6 +24,18 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
+def _text_of(content) -> str:
+    """Plain text from a message's content — a string, or a list of content blocks
+    like [{"type": "text", "text": "..."}] (some providers return the latter)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block) for block in content
+        )
+    return ""
+
+
 def _client_ip(request) -> str:
     """The caller's IP — the first X-Forwarded-For entry (Render sets it), else REMOTE_ADDR."""
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
@@ -111,20 +123,30 @@ async def chat_stream(request):
         # if nothing has streamed yet — never switch models mid-answer.
         for agent in agents:
             error = None
+            final_text = ""  # the model's final answer, in case it isn't streamed
             try:
                 async for event in agent.astream_events({"messages": history}, version="v2"):
                     kind = event["event"]
                     if kind == "on_chat_model_stream":
-                        token = getattr(event["data"]["chunk"], "content", "") or ""
+                        token = _text_of(getattr(event["data"]["chunk"], "content", ""))
                         if token:
                             reply_parts.append(token)
                             emitted = True
                             yield _sse({"text": token})
+                    elif kind == "on_chat_model_end":
+                        content = _text_of(getattr(event["data"].get("output"), "content", ""))
+                        if content:
+                            final_text = content
                     elif kind == "on_tool_start":
                         emitted = True
                         yield _sse({"tool": event["name"], "status": "start"})
                     elif kind == "on_tool_end":
                         yield _sse({"tool": event["name"], "status": "end"})
+                # Fallback: the model returned a final answer without streaming tokens.
+                if not reply_parts and final_text:
+                    reply_parts.append(final_text)
+                    emitted = True
+                    yield _sse({"text": final_text})
                 break  # this model succeeded
             except Exception as exc:  # noqa: BLE001 — any failure triggers failover
                 error = exc

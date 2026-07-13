@@ -97,6 +97,19 @@ class _FailingAgent:
         yield  # unreachable; makes this an async generator
 
 
+class _FinalOnlyAgent:
+    """Stand-in that emits a tool then a final message, but streams no tokens."""
+
+    async def astream_events(self, payload, version=None):
+        yield {"event": "on_tool_start", "name": "get_facts", "data": {}}
+        yield {"event": "on_tool_end", "name": "get_facts", "data": {}}
+        yield {
+            "event": "on_chat_model_end",
+            "name": "model",
+            "data": {"output": SimpleNamespace(content="Here is the answer.")},
+        }
+
+
 async def _drain(response) -> str:
     parts = [chunk async for chunk in response.streaming_content]
     return b"".join(parts).decode()
@@ -350,6 +363,24 @@ def test_failover_to_second_model_when_first_fails():
     body = asyncio.run(_run())
     assert '"error"' not in body  # the failure was recovered, not shown
     assert '"text": "from the fallback"' in body
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_final_message_is_sent_when_the_model_does_not_stream_tokens():
+    """If the answer arrives only as a final message, it's still sent as text."""
+
+    async def _run():
+        with patch("chat.views.build_agents", return_value=(_FinalOnlyAgent(),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"text": "Here is the answer."' in body
     assert '"done": true' in body
 
 
