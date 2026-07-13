@@ -120,6 +120,8 @@ CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 # The provider prefix picks the API key env var ("groq/..." → GROQ_API_KEY, etc.).
 CHAT_MODEL = os.getenv("CHAT_MODEL", "groq/llama-3.3-70b-versatile")
 CHAT_FALLBACK_MODEL = os.getenv("CHAT_FALLBACK_MODEL", "gemini/gemini-2.0-flash")
+# Higher = more varied and conversational; lower = more focused/repetitive.
+CHAT_TEMPERATURE = float(os.getenv("CHAT_TEMPERATURE", "0.7"))
 
 # GitHub, for the project/README tools. A token is optional but lifts the API rate
 # limit from 60/hour (anonymous) to 5000/hour.
