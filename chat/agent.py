@@ -25,21 +25,25 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_model():
-    """The default chat model, routed through LiteLLM (provider set by CHAT_MODEL)."""
-    return ChatLiteLLM(model=settings.CHAT_MODEL, streaming=True)
+def build_model(model_id: str):
+    """A chat model routed through LiteLLM for the given model id."""
+    return ChatLiteLLM(model=model_id, streaming=True)
 
 
 def build_agent(model=None, tools=None):
     """Build a LangGraph agent. `model` and `tools` are injectable for tests."""
     return create_react_agent(
-        model or build_model(),
+        model or build_model(settings.CHAT_MODEL),
         tools=TOOLS if tools is None else tools,
         prompt=SYSTEM_PROMPT,
     )
 
 
 @lru_cache(maxsize=1)
-def get_agent():
-    """The production agent, compiled once and reused across requests."""
-    return build_agent()
+def get_agents():
+    """The production agents, one per model, tried in order (primary then fallback).
+
+    Compiled once and reused across requests.
+    """
+    model_ids = [m for m in (settings.CHAT_MODEL, settings.CHAT_FALLBACK_MODEL) if m]
+    return tuple(build_agent(model=build_model(model_id)) for model_id in model_ids)

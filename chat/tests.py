@@ -89,6 +89,14 @@ class _ToolEventAgent:
         yield _model_stream_event("Here you go")
 
 
+class _FailingAgent:
+    """Stand-in whose stream raises immediately (simulates a quota/rate limit)."""
+
+    async def astream_events(self, payload, version=None):
+        raise RuntimeError("rate limit exceeded")
+        yield  # unreachable; makes this an async generator
+
+
 async def _drain(response) -> str:
     parts = [chunk async for chunk in response.streaming_content]
     return b"".join(parts).decode()
@@ -114,7 +122,7 @@ def test_chat_stream_streams_tokens_via_langgraph():
 
     async def _run():
         agent = build_agent(model=_fake_model("Hello recruiter"), tools=[])
-        with patch("chat.views.get_agent", return_value=agent):
+        with patch("chat.views.get_agents", return_value=(agent,)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -155,7 +163,7 @@ def test_messages_are_persisted():
     async def _run():
         from chat.models import Message
 
-        with patch("chat.views.get_agent", return_value=_RecordingAgent()):
+        with patch("chat.views.get_agents", return_value=(_RecordingAgent(),)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -173,7 +181,7 @@ def test_conversation_history_is_passed_to_the_agent():
     recording = _RecordingAgent(reply="noted")
 
     async def _run():
-        with patch("chat.views.get_agent", return_value=recording):
+        with patch("chat.views.get_agents", return_value=(recording,)):
             client = AsyncClient()
             first = await client.post(
                 "/chat/stream",
@@ -235,7 +243,7 @@ def test_stream_emits_tool_step_events():
     """Tool start/end events from the agent become SSE `tool` frames."""
 
     async def _run():
-        with patch("chat.views.get_agent", return_value=_ToolEventAgent()):
+        with patch("chat.views.get_agents", return_value=(_ToolEventAgent(),)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "what are your projects?"}),
@@ -319,3 +327,42 @@ def test_list_github_projects_tool_formats_repos():
     assert "portfolio-backend" in result
     assert "Django backend" in result
     assert "a-fork" not in result  # forks are excluded
+
+
+# --- Phase 4: provider failover -------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_failover_to_second_model_when_first_fails():
+    """First model errors before streaming → the next model handles the turn."""
+    fallback = _RecordingAgent(reply="from the fallback")
+
+    async def _run():
+        with patch("chat.views.get_agents", return_value=(_FailingAgent(), fallback)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"error"' not in body  # the failure was recovered, not shown
+    assert '"text": "from the fallback"' in body
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_error_is_surfaced_when_all_models_fail():
+    async def _run():
+        with patch("chat.views.get_agents", return_value=(_FailingAgent(), _FailingAgent())):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"error"' in body
+    assert '"done": true' in body
