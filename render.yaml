@@ -16,7 +16,10 @@ services:
     # connection; sync endpoints still run fine (Django runs them in a threadpool).
     # --timeout 0 disables gunicorn's request timeout, which would otherwise kill
     # long-lived streams. migrate runs first so the DB schema is current on each deploy.
-    startCommand: "python manage.py migrate --noinput && gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 0"
+    # One async worker: uvicorn handles concurrency within it, and the heavy LLM
+    # stack (litellm + langgraph + langchain) is loaded once — two copies OOM the
+    # 512MB free instance, which returns 502s (that read as CORS errors in browsers).
+    startCommand: "python manage.py migrate --noinput && gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 0"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
