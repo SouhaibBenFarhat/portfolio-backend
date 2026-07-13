@@ -12,7 +12,11 @@ services:
     # pytest runs with DEBUG=true so production's SECURE_SSL_REDIRECT doesn't 301 the
     # test client; collectstatic then runs with the ambient (production) env.
     buildCommand: "pip install -r requirements-dev.txt && DEBUG=true pytest -q && python manage.py collectstatic --noinput"
-    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60"
+    # Async server (uvicorn worker) so streaming endpoints don't tie up a worker per
+    # connection; sync endpoints still run fine (Django runs them in a threadpool).
+    # --timeout 0 disables gunicorn's request timeout, which would otherwise kill
+    # long-lived streams. migrate runs first so the DB schema is current on each deploy.
+    startCommand: "python manage.py migrate --noinput && gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --timeout 0"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -26,3 +30,16 @@ services:
         value: ".onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://souhaibbenfarhat.github.io"
+      - key: DATABASE_URL # Postgres connection string, injected from the DB below
+        fromDatabase:
+          name: portfolio-db
+          property: connectionString
+
+# Managed Postgres for chat persistence (conversations, facts). Free plan.
+# NOTE: Render's free Postgres expires after a limited window — to keep the DB
+# permanent, either upgrade the plan or point DATABASE_URL at an external free
+# Postgres (Neon, Supabase). The app reads DATABASE_URL, so switching is a one-var change.
+databases:
+  - name: portfolio-db
+    plan: free
+    region: frankfurt
