@@ -11,3 +11,9 @@ psycopg[binary]>=3.2
 
 # Async server for streaming endpoints (run via gunicorn's uvicorn worker).
 uvicorn>=0.30
+
+# LLM gateway — one interface to many providers (Groq, Gemini, …) with failover.
+litellm>=1.55
+# Loads a local .env so provider keys work in development (no-op in production,
+# where the host injects env vars).
+python-dotenv>=1.0
