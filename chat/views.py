@@ -121,9 +121,13 @@ async def chat_stream(request):
         error = None
         # Per-turn failover: try each model in order. Only fall back to the next model
         # if nothing has streamed yet — never switch models mid-answer.
+        # Try each model in order. Regenerate on an *empty* response too (not just on
+        # errors): the model produces a real answer on retry, or the next model does.
         for agent in agents:
             error = None
-            final_text = ""  # the model's final answer, in case it isn't streamed
+            final_text = ""  # the answer, in case it arrives as one message not streamed
+            got_text = False
+            tools_shown = False
             try:
                 async for event in agent.astream_events({"messages": history}, version="v2"):
                     kind = event["event"]
@@ -131,31 +135,41 @@ async def chat_stream(request):
                         token = _text_of(getattr(event["data"]["chunk"], "content", ""))
                         if token:
                             reply_parts.append(token)
-                            emitted = True
+                            got_text = emitted = True
                             yield _sse({"text": token})
                     elif kind == "on_chat_model_end":
                         content = _text_of(getattr(event["data"].get("output"), "content", ""))
                         if content:
                             final_text = content
                     elif kind == "on_tool_start":
-                        emitted = True
+                        tools_shown = emitted = True
                         yield _sse({"tool": event["name"], "status": "start"})
                     elif kind == "on_tool_end":
                         yield _sse({"tool": event["name"], "status": "end"})
-                # Fallback: the model returned a final answer without streaming tokens.
-                if not reply_parts and final_text:
+                if not got_text and final_text:
                     reply_parts.append(final_text)
-                    emitted = True
+                    got_text = emitted = True
                     yield _sse({"text": final_text})
-                break  # this model succeeded
+                if got_text or tools_shown:
+                    break  # got an answer, or already showed tool steps (don't replay them)
+                # Empty and nothing shown yet → loop to regenerate with the next model.
             except Exception as exc:  # noqa: BLE001 — any failure triggers failover
                 error = exc
                 if emitted:
                     break  # already streamed part of an answer — don't switch models
-        if error is not None and not emitted:
-            yield _sse({"error": str(error)})
 
         reply = "".join(reply_parts)
+        if not reply:
+            if error is not None:
+                yield _sse({"error": str(error)})
+            else:
+                # Every retry came back empty (rare) — a graceful line so it's never blank.
+                reply = (
+                    "Sorry, I couldn't find an answer to that. You can ask about "
+                    "Souhaib's projects, experience, skills, or availability."
+                )
+                yield _sse({"text": reply})
+
         if reply:
             await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply

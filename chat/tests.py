@@ -110,6 +110,14 @@ class _FinalOnlyAgent:
         }
 
 
+class _EmptyAgent:
+    """Stand-in that produces nothing at all (an empty model response)."""
+
+    async def astream_events(self, payload, version=None):
+        return
+        yield  # unreachable; makes this an async generator
+
+
 async def _drain(response) -> str:
     parts = [chunk async for chunk in response.streaming_content]
     return b"".join(parts).decode()
@@ -381,6 +389,43 @@ def test_final_message_is_sent_when_the_model_does_not_stream_tokens():
 
     body = asyncio.run(_run())
     assert '"text": "Here is the answer."' in body
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_empty_response_regenerates_with_the_next_model():
+    """An empty answer from the first model falls over to the next model."""
+
+    async def _run():
+        agents = (_EmptyAgent(), _RecordingAgent(reply="from the retry"))
+        with patch("chat.views.build_agents", return_value=agents):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"error"' not in body
+    assert '"text": "from the retry"' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_graceful_line_when_every_model_returns_empty():
+    """If all retries are empty (rare), a graceful line is sent — never a blank bubble."""
+
+    async def _run():
+        with patch("chat.views.build_agents", return_value=(_EmptyAgent(), _EmptyAgent())):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert "couldn't find an answer" in body
     assert '"done": true' in body
 
 
