@@ -122,7 +122,7 @@ def test_chat_stream_streams_tokens_via_langgraph():
 
     async def _run():
         agent = build_agent(model=_fake_model("Hello recruiter"), tools=[])
-        with patch("chat.views.get_agents", return_value=(agent,)):
+        with patch("chat.views.build_agents", return_value=(agent,)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -163,7 +163,7 @@ def test_messages_are_persisted():
     async def _run():
         from chat.models import Message
 
-        with patch("chat.views.get_agents", return_value=(_RecordingAgent(),)):
+        with patch("chat.views.build_agents", return_value=(_RecordingAgent(),)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -181,7 +181,7 @@ def test_conversation_history_is_passed_to_the_agent():
     recording = _RecordingAgent(reply="noted")
 
     async def _run():
-        with patch("chat.views.get_agents", return_value=(recording,)):
+        with patch("chat.views.build_agents", return_value=(recording,)):
             client = AsyncClient()
             first = await client.post(
                 "/chat/stream",
@@ -243,7 +243,7 @@ def test_stream_emits_tool_step_events():
     """Tool start/end events from the agent become SSE `tool` frames."""
 
     async def _run():
-        with patch("chat.views.get_agents", return_value=(_ToolEventAgent(),)):
+        with patch("chat.views.build_agents", return_value=(_ToolEventAgent(),)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "what are your projects?"}),
@@ -338,7 +338,7 @@ def test_failover_to_second_model_when_first_fails():
     fallback = _RecordingAgent(reply="from the fallback")
 
     async def _run():
-        with patch("chat.views.get_agents", return_value=(_FailingAgent(), fallback)):
+        with patch("chat.views.build_agents", return_value=(_FailingAgent(), fallback)):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -355,7 +355,7 @@ def test_failover_to_second_model_when_first_fails():
 @pytest.mark.django_db(transaction=True)
 def test_error_is_surfaced_when_all_models_fail():
     async def _run():
-        with patch("chat.views.get_agents", return_value=(_FailingAgent(), _FailingAgent())):
+        with patch("chat.views.build_agents", return_value=(_FailingAgent(), _FailingAgent())):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -366,3 +366,40 @@ def test_error_is_surfaced_when_all_models_fail():
     body = asyncio.run(_run())
     assert '"error"' in body
     assert '"done": true' in body
+
+
+# --- Admin-managed API keys -----------------------------------------------
+
+
+def test_llm_credential_registered_in_admin():
+    from chat.models import LLMCredential
+
+    assert LLMCredential in django_admin.site._registry
+
+
+@pytest.mark.django_db
+def test_llm_credential_is_encrypted_at_rest():
+    from django.db import connection
+
+    from chat.models import LLMCredential
+
+    cred = LLMCredential.objects.create(provider="groq", api_key="gsk_supersecret")
+
+    # The model returns the plaintext key...
+    assert LLMCredential.objects.get(pk=cred.pk).api_key == "gsk_supersecret"
+
+    # ...but the raw database value is ciphertext, not the plaintext.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT api_key FROM chat_llmcredential WHERE id = %s", [cred.pk])
+        raw = cursor.fetchone()[0]
+    assert raw != "gsk_supersecret"
+    assert "gsk_supersecret" not in raw
+
+
+def test_build_agents_builds_one_agent_per_key():
+    """Multiple keys for a provider each become an agent, in failover order."""
+    from chat.agent import build_agents
+
+    # Two Groq keys + Gemini falling back to its env var → 3 agents total.
+    agents = build_agents({"groq": ["k1", "k2"]})
+    assert len(agents) == 3

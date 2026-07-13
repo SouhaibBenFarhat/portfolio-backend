@@ -78,7 +78,18 @@ class Fact(models.Model):          # short recruiter Q&A
 
 class Document(models.Model):      # long-form content (CV, bio)
     slug, title, content, is_active
+
+# Admin-managed provider API keys (encrypted at rest)
+class LLMCredential(models.Model):  # multiple keys per provider, tried in order
+    provider, label, api_key (encrypted), is_active
 ```
+
+**Admin-managed API keys:** LLM provider keys live in `LLMCredential` (edited in the
+admin), so they can be added/rotated without touching env vars. The `api_key` is
+Fernet-encrypted at rest (key derived from `SECRET_KEY` — no extra env var); the DB
+only holds ciphertext. Multiple keys per provider are allowed and tried in order;
+a provider with no admin key falls back to its env var. Agents are cached by the
+set of keys in use, so a rotation takes effect on the next request.
 
 Conversation history lives in the `Conversation`/`Message` models, keyed by an
 anonymous `conversation_id` (a UUID). Chosen over LangGraph's Postgres checkpointer

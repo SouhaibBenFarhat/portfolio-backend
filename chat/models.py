@@ -9,6 +9,8 @@ import uuid
 
 from django.db import models
 
+from .fields import EncryptedTextField
+
 
 class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -75,3 +77,26 @@ class Document(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class LLMCredential(models.Model):
+    """An LLM provider API key, managed in the admin. Multiple keys per provider
+    are allowed and tried in order; the key is encrypted at rest."""
+
+    provider = models.CharField(
+        max_length=50,
+        help_text='LiteLLM provider prefix, e.g. "groq" or "gemini".',
+    )
+    label = models.CharField(
+        max_length=100, blank=True, help_text="Optional note, e.g. which account the key is from."
+    )
+    api_key = EncryptedTextField(help_text="Stored encrypted; only the last 4 chars show.")
+    is_active = models.BooleanField(default=True, help_text="Uncheck to disable without deleting.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["provider", "id"]
+
+    def __str__(self):
+        return f"{self.provider} ({self.label or 'key'})"
