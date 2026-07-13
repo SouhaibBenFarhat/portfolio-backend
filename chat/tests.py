@@ -1,18 +1,23 @@
 """Tests for the chat app.
 
 Phase 0 guards: app wiring, async stack, DB config.
-Phase 1 guards: the streaming endpoint (LiteLLM mocked, so no API key is needed).
+Phase 1/3a guards: streaming through the LangGraph agent (a fake model, so no
+API key is needed).
 Phase 2 guards: conversation persistence and memory across messages.
 """
 
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 from django.conf import settings
 from django.test import AsyncClient
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage
+
+from chat.agent import build_agent
 
 # --- Phase 0: infrastructure ----------------------------------------------
 
@@ -49,23 +54,21 @@ def test_health_endpoint_works_through_the_async_stack():
 # --- helpers ---------------------------------------------------------------
 
 
-def _chunk(token: str):
-    """Mimic a LiteLLM streaming chunk carrying one token."""
-    return SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=token))])
+def _fake_model(reply: str):
+    """A LangGraph-compatible chat model that streams a scripted reply."""
+    return GenericFakeChatModel(messages=iter([AIMessage(content=reply)]))
 
 
-class _FakeStream:
-    """Async-iterable stand-in for LiteLLM's streaming response."""
+class _RecordingAgent:
+    """Stands in for the compiled agent: records its inputs, streams a reply."""
 
-    def __init__(self, tokens):
-        self._tokens = tokens
+    def __init__(self, reply: str = "ok"):
+        self.seen = []
+        self._reply = reply
 
-    def __aiter__(self):
-        return self._aiter()
-
-    async def _aiter(self):
-        for token in self._tokens:
-            yield _chunk(token)
+    async def astream(self, payload, stream_mode=None):
+        self.seen.append(payload["messages"])
+        yield SimpleNamespace(content=self._reply), {}
 
 
 async def _drain(response) -> str:
@@ -84,16 +87,16 @@ def _conversation_id_from(body: str) -> str:
     raise AssertionError("no conversation_id frame in stream")
 
 
-# --- Phase 1: streaming ----------------------------------------------------
+# --- Phase 1 / 3a: streaming through the LangGraph agent -------------------
 
 
 @pytest.mark.django_db(transaction=True)
-def test_chat_stream_streams_tokens_as_sse():
-    """POST a message → get a conversation id, token frames, then a done frame."""
+def test_chat_stream_streams_tokens_via_langgraph():
+    """A real LangGraph agent (with a fake model) streams SSE token frames."""
 
     async def _run():
-        fake = AsyncMock(return_value=_FakeStream(["Hel", "lo", "!"]))
-        with patch("chat.views.litellm.acompletion", fake):
+        agent = build_agent(model=_fake_model("Hello recruiter"))
+        with patch("chat.views.get_agent", return_value=agent):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -105,7 +108,8 @@ def test_chat_stream_streams_tokens_as_sse():
 
     body = asyncio.run(_run())
     assert '"conversation_id"' in body
-    assert '"text": "Hel"' in body
+    assert '"text":' in body
+    assert "Hello" in body
     assert '"done": true' in body
 
 
@@ -133,8 +137,7 @@ def test_messages_are_persisted():
     async def _run():
         from chat.models import Message
 
-        fake = AsyncMock(return_value=_FakeStream(["Hello"]))
-        with patch("chat.views.litellm.acompletion", fake):
+        with patch("chat.views.get_agent", return_value=_RecordingAgent()):
             response = await AsyncClient().post(
                 "/chat/stream",
                 data=json.dumps({"message": "hi"}),
@@ -147,12 +150,12 @@ def test_messages_are_persisted():
 
 
 @pytest.mark.django_db(transaction=True)
-def test_conversation_is_remembered_across_messages():
+def test_conversation_history_is_passed_to_the_agent():
     """A second message on the same conversation includes the first exchange."""
+    recording = _RecordingAgent(reply="noted")
 
     async def _run():
-        fake = AsyncMock(side_effect=[_FakeStream(["Hi ", "Sam"]), _FakeStream(["you said hi"])])
-        with patch("chat.views.litellm.acompletion", fake):
+        with patch("chat.views.get_agent", return_value=recording):
             client = AsyncClient()
             first = await client.post(
                 "/chat/stream",
@@ -167,9 +170,8 @@ def test_conversation_is_remembered_across_messages():
                 content_type="application/json",
             )
             await _drain(second)
-        return fake.call_args_list
+        return recording.seen
 
-    calls = asyncio.run(_run())
-    second_messages = calls[1].kwargs["messages"]
-    contents = [m["content"] for m in second_messages]
-    assert contents == ["I am Sam", "Hi Sam", "what did I say?"]
+    seen = asyncio.run(_run())
+    contents = [m["content"] for m in seen[1]]
+    assert contents == ["I am Sam", "noted", "what did I say?"]

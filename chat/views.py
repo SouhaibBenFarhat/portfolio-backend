@@ -1,19 +1,18 @@
 """Chat endpoints.
 
-A single model (via LiteLLM) streams its reply token-by-token over Server-Sent
-Events, with conversation history loaded from and saved to the database so the
-assistant remembers context across messages. Tools and provider failover arrive
-in later phases.
+A LangGraph agent streams its reply token-by-token over Server-Sent Events, with
+conversation history loaded from and saved to the database so the assistant
+remembers context across messages. Tools and provider failover arrive in later
+phases.
 """
 
 import json
 import uuid
 
-import litellm
-from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from .agent import get_agent
 from .models import Conversation, Message
 
 
@@ -67,15 +66,14 @@ async def chat_stream(request):
         conversation=conversation, role=Message.Role.USER, content=message
     )
 
+    agent = get_agent()
+
     async def event_stream():
         yield _sse({"conversation_id": str(conversation.id)})
         reply_parts = []
         try:
-            response = await litellm.acompletion(
-                model=settings.CHAT_MODEL, messages=history, stream=True
-            )
-            async for chunk in response:
-                token = chunk.choices[0].delta.content or ""
+            async for chunk, _meta in agent.astream({"messages": history}, stream_mode="messages"):
+                token = getattr(chunk, "content", "") or ""
                 if token:
                     reply_parts.append(token)
                     yield _sse({"text": token})
