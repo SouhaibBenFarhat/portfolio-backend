@@ -46,7 +46,8 @@ LiteLLM (model layer)  ──────────► Gemini (free) → Groq/
 | Model gateway | **LiteLLM** (library, in-backend, free) |
 | Primary model | **Gemini** free tier (supports tool calling) |
 | Fallback model | **Groq / Llama 3.3 70B** free tier (supports tool calling) |
-| Agent + memory | **LangGraph** with Postgres checkpointer |
+| Conversation memory | **Django `Conversation`/`Message` models** in Postgres (testable in CI with SQLite; visible in admin) |
+| Agent runtime | **LangGraph** — introduced in Phase 3, where tools need it |
 | Persistence DB | **Postgres** (Render free tier) — SQLite won't survive Render's ephemeral disk |
 | Server mode | **Async** (`gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker --timeout 0`) |
 | Failover granularity | **Per turn** (switch engine between messages, never mid-stream) |
@@ -57,28 +58,33 @@ LiteLLM (model layer)  ──────────► Gemini (free) → Groq/
 
 Holds the models, the async endpoint, the tools, and the LangGraph agent.
 
-### Models (first real models in the project)
+### Models
 
 ```python
+# Phase 2 — conversation persistence
+class Conversation(models.Model):
+    id = UUIDField(primary_key, default=uuid4)   # anonymous, unguessable session id
+    created_at, updated_at
+
+class Message(models.Model):
+    conversation = ForeignKey(Conversation, related_name="messages")
+    role    = CharField          # "user" | "assistant"
+    content = TextField
+    created_at
+
+# Phase 3 — knowledge base (edited in Django admin)
 class Fact(models.Model):          # short recruiter Q&A
-    category  = CharField          # "Compensation", "Availability", "Personal"
-    question  = CharField
-    answer    = TextField
-    is_active = BooleanField(default=True)
-    order     = IntegerField(default=0)
+    category, question, answer, is_active, order
 
 class Document(models.Model):      # long-form content (CV, bio)
-    slug    = SlugField(unique=True)   # "cv", "bio"
-    title   = CharField
-    content = TextField
-    is_active = BooleanField(default=True)
+    slug, title, content, is_active
 ```
 
-Both registered in Django admin → editable dashboard for free, login-protected.
-
-Conversation state is stored by **LangGraph's Postgres checkpointer**, keyed by
-`conversation_id` (the thread id). That is the persistence — no custom Message table
-required for v1 (optional later for admin/analytics visibility).
+Conversation history lives in the `Conversation`/`Message` models, keyed by an
+anonymous `conversation_id` (a UUID). Chosen over LangGraph's Postgres checkpointer
+because it stays inside Django's migrations, is testable in CI without a live Postgres,
+and is visible in the admin. LangGraph (Phase 3) reads this history rather than owning
+its own persistence.
 
 ### Tools
 
@@ -125,10 +131,12 @@ not scripted.
   - One model via LiteLLM, async Server-Sent Events endpoint, a basic test page.
   - No tools, no persistence — just prove the streaming pipe end to end.
 - **Phase 2 — Persistence**
-  - LangGraph + Postgres checkpointer; conversation IDs; resume prior context.
-- **Phase 3 — Tools + admin**
-  - `Fact`/`Document` models + admin; `get_facts`/`get_cv`; GitHub tools.
-  - Wire tools into the LangGraph agent; emit step events.
+  - `Conversation`/`Message` models; anonymous conversation IDs; load history each turn
+    and save the exchange so context survives messages and restarts.
+- **Phase 3 — Tools + admin (introduce LangGraph)**
+  - Bring in LangGraph as the agent runtime, reading the stored history.
+  - `Fact`/`Document` models + Django admin; `get_facts`/`get_cv`; GitHub tools.
+  - Wire tools into the agent; emit real step events.
 - **Phase 4 — Multi-model failover**
   - LiteLLM fallback chain (Gemini → Groq); handle quota/rate-limit errors.
 - **Phase 5 — Frontend + polish**
