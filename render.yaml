@@ -40,6 +40,10 @@ services:
         sync: false
       - key: GEMINI_API_KEY # secret — set the real value in the Render dashboard
         sync: false
+      - key: GITHUB_USERNAME
+        value: "SouhaibBenFarhat"
+      - key: GITHUB_TOKEN # optional secret — lifts the GitHub API rate limit
+        sync: false
 
 # Managed Postgres for chat persistence (conversations, facts). Free plan.
 # NOTE: Render's free Postgres expires after a limited window — to keep the DB

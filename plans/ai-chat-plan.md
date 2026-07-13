@@ -139,9 +139,10 @@ not scripted.
 - **Phase 3b — Knowledge base + admin** ✅
   - `Fact`/`Document` models; enable Django admin (login-protected editing UI);
     Conversations viewable read-only.
-- **Phase 3c — Tools + step events**
-  - `get_facts`/`get_cv`; GitHub tools (list projects, read READMEs).
-  - Wire tools into the agent; emit real step events for the frontend animations.
+- **Phase 3c — Tools + step events** ✅
+  - `get_facts`/`get_cv` (async ORM); GitHub tools (list projects, read READMEs).
+  - Wire tools into the agent; stream real `on_tool_start`/`on_tool_end` events as
+    SSE `tool` frames for the frontend animations.
 - **Phase 4 — Multi-model failover**
   - LiteLLM fallback chain (Gemini → Groq); handle quota/rate-limit errors.
 - **Phase 5 — Frontend + polish**
