@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 from django.conf import settings
+from django.contrib import admin as django_admin
 from django.test import AsyncClient
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
@@ -175,3 +176,35 @@ def test_conversation_history_is_passed_to_the_agent():
     seen = asyncio.run(_run())
     contents = [m["content"] for m in seen[1]]
     assert contents == ["I am Sam", "noted", "what did I say?"]
+
+
+# --- Phase 3b: knowledge base + admin -------------------------------------
+
+
+def test_fact_and_document_registered_in_admin():
+    from chat.models import Conversation, Document, Fact
+
+    assert Fact in django_admin.site._registry
+    assert Document in django_admin.site._registry
+    assert Conversation in django_admin.site._registry
+
+
+@pytest.mark.django_db
+def test_admin_login_page_loads(client):
+    """Admin is enabled and reachable (its middleware/apps are wired correctly)."""
+    response = client.get("/admin/login/")
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_fact_and_document_models_work():
+    from chat.models import Document, Fact
+
+    fact = Fact.objects.create(
+        category="Compensation", question="Salary expectations", answer="Competitive"
+    )
+    assert str(fact) == "Compensation: Salary expectations"
+    assert fact.is_active is True
+
+    doc = Document.objects.create(slug="cv", title="Résumé", content="…")
+    assert str(doc) == "Résumé"

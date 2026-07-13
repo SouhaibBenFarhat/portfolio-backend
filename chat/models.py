@@ -39,3 +39,39 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:50]}"
+
+
+class Fact(models.Model):
+    """A short question/answer the assistant can cite (edited in the admin)."""
+
+    category = models.CharField(
+        max_length=50,
+        help_text='Group label, e.g. "Compensation", "Availability", "Personal".',
+    )
+    question = models.CharField(max_length=200, help_text="e.g. Salary expectations")
+    answer = models.TextField()
+    is_active = models.BooleanField(default=True, help_text="Uncheck to hide without deleting.")
+    order = models.IntegerField(default=0, help_text="Lower numbers show first.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "category", "question"]
+
+    def __str__(self):
+        return f"{self.category}: {self.question}"
+
+
+class Document(models.Model):
+    """Long-form content (CV, bio) the assistant can read (edited in the admin)."""
+
+    slug = models.SlugField(unique=True, help_text='Stable id, e.g. "cv" or "bio".')
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["slug"]
+
+    def __str__(self):
+        return self.title
