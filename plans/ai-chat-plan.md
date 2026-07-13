@@ -133,10 +133,12 @@ not scripted.
 - **Phase 2 — Persistence**
   - `Conversation`/`Message` models; anonymous conversation IDs; load history each turn
     and save the exchange so context survives messages and restarts.
-- **Phase 3 — Tools + admin (introduce LangGraph)**
-  - Bring in LangGraph as the agent runtime, reading the stored history.
+- **Phase 3a — Introduce LangGraph** ✅
+  - Replace the direct LiteLLM call with a LangGraph agent (model + system persona,
+    no tools yet), reading the stored history. Streaming + persistence unchanged.
+- **Phase 3b — Tools + admin**
   - `Fact`/`Document` models + Django admin; `get_facts`/`get_cv`; GitHub tools.
-  - Wire tools into the agent; emit real step events.
+  - Wire tools into the agent; emit real step events for the frontend animations.
 - **Phase 4 — Multi-model failover**
   - LiteLLM fallback chain (Gemini → Groq); handle quota/rate-limit errors.
 - **Phase 5 — Frontend + polish**

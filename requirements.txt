@@ -17,3 +17,8 @@ litellm>=1.55
 # Loads a local .env so provider keys work in development (no-op in production,
 # where the host injects env vars).
 python-dotenv>=1.0
+
+# Agent runtime — LangGraph builds/runs the agent; langchain-litellm lets it call
+# models through the LiteLLM gateway above.
+langgraph>=0.2
+langchain-litellm>=0.1
