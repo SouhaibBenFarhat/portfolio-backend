@@ -310,6 +310,7 @@ def test_get_cv_tool_reads_the_cv_document():
     assert "10 years of Python" in asyncio.run(_run())
 
 
+@pytest.mark.django_db(transaction=True)
 def test_list_github_projects_tool_formats_repos():
     from chat import tools
 
@@ -349,6 +350,65 @@ def test_list_github_projects_tool_formats_repos():
     assert "portfolio-backend" in result
     assert "Django backend" in result
     assert "a-fork" not in result  # forks are excluded
+
+
+@pytest.mark.django_db(transaction=True)
+def test_list_github_projects_tool_handles_rate_limit_gracefully():
+    """A GitHub 403 (anonymous rate limit) returns a readable message, not an
+    exception that would abort the whole chat turn."""
+    import httpx
+
+    from chat import tools
+
+    class _Resp:
+        status_code = 403
+
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError(
+                "rate limited",
+                request=httpx.Request("GET", "https://api.github.com"),
+                response=self,
+            )
+
+    class _Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def get(self, *a, **k):
+            return _Resp()
+
+    async def _run():
+        with patch.object(tools.httpx, "AsyncClient", return_value=_Client()):
+            return await tools.list_github_projects.ainvoke({})
+
+    result = asyncio.run(_run())
+    assert "rate-limited" in result
+    assert "try again" in result
+
+
+@pytest.mark.django_db(transaction=True)
+def test_github_token_prefers_admin_credential_over_env():
+    """A provider="github" credential in the admin is used for the GitHub token,
+    taking precedence over the GITHUB_TOKEN env var."""
+    from chat import tools
+    from chat.models import LLMCredential
+
+    async def _run():
+        await LLMCredential.objects.acreate(provider="github", api_key="ghp_admintoken")
+        return await tools._github_token()
+
+    with override_settings(GITHUB_TOKEN="env_token"):
+        assert asyncio.run(_run()) == "ghp_admintoken"
+
+
+def test_github_headers_carry_bearer_token():
+    from chat import tools
+
+    assert tools._github_headers("ghp_x")["Authorization"] == "Bearer ghp_x"
+    assert "Authorization" not in tools._github_headers("")  # anonymous
 
 
 # --- Phase 4: provider failover -------------------------------------------
