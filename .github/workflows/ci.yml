@@ -36,6 +36,17 @@ jobs:
         env:
           SECRET_KEY: ci-secret
 
+      - name: OpenAPI schema is up to date
+        # Regenerate the committed spec and fail if it drifted from the code — the same
+        # guard as the migrations check. The frontend generates its types from this file,
+        # so a stale spec would ship wrong types.
+        run: |
+          python manage.py spectacular --file openapi.yaml --validate
+          git diff --exit-code openapi.yaml
+        env:
+          SECRET_KEY: ci-secret
+          DEBUG: "true"
+
       - name: Tests
         run: pytest -q
         env:

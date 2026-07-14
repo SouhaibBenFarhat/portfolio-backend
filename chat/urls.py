@@ -10,7 +10,7 @@ urlpatterns = [
     path("stream", views.chat_stream, name="stream"),
     path(
         "conversations/<uuid:conversation_id>/",
-        views.conversation_detail,
+        views.ConversationDetailView.as_view(),
         name="conversation_detail",
     ),
 ]

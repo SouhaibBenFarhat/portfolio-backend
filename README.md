@@ -27,7 +27,41 @@ Browser ──► Astro site (GitHub Pages, static)
 | ------ | ----------------- | -------------------------------------------------------------- |
 | GET    | `/`               | Service descriptor (JSON)                                      |
 | GET    | `/health`         | Liveness probe (`{"status":"ok"}`), used by Render             |
+| GET    | `/api/docs/`      | Swagger UI — interactive API documentation                     |
+| GET    | `/api/schema/`    | OpenAPI 3 schema (the contract; feeds frontend type generation)|
+| POST   | `/chat/stream`    | Streaming AI chat (Server-Sent Events)                         |
+| GET    | `/chat/conversations/<uuid>/` | Restore a stored conversation                      |
 | ANY    | `/ingest/<path>`  | Reverse proxy to PostHog (see below)                           |
+
+## API documentation (OpenAPI / Swagger)
+
+The JSON endpoints are Django REST Framework views; [drf-spectacular](https://drf-spectacular.readthedocs.io/)
+introspects them into an **OpenAPI 3** schema:
+
+- **Swagger UI:** [`/api/docs/`](https://portfolio-backend-2huw.onrender.com/api/docs/) —
+  interactive, human-readable docs (assets vendored via `drf-spectacular-sidecar`, so no CDN).
+- **Schema:** [`/api/schema/`](https://portfolio-backend-2huw.onrender.com/api/schema/) — the
+  raw OpenAPI document. Also committed to the repo as [`openapi.yaml`](./openapi.yaml).
+
+`/chat/stream` is an async Server-Sent Events endpoint, which DRF can't model, so it's
+described by hand in [`chat/schema.py`](./chat/schema.py) and injected into the schema by a
+postprocessing hook (its SSE frames become named component schemas). `/ingest/*` is an opaque
+proxy and is intentionally left out of the docs.
+
+**The committed `openapi.yaml` is the contract.** CI regenerates it and fails on any drift
+(the same guard as the migrations check), so the spec can never silently fall behind the code.
+Regenerate locally after changing an endpoint:
+
+```bash
+python manage.py spectacular --file openapi.yaml --validate
+```
+
+### Frontend type generation (contract-driven)
+
+The [frontend](https://github.com/SouhaibBenFarhat/souhaibbenfarhat.github.io) generates its
+TypeScript types from this spec (`openapi-typescript`), so the two repos can't drift apart.
+On a push to `main` that changes `openapi.yaml`, this repo fires a `repository_dispatch` at the
+frontend, whose workflow regenerates the types and opens a PR when they change.
 
 ### PostHog reverse proxy
 

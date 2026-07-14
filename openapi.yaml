@@ -1,0 +1,268 @@
+openapi: 3.0.3
+info:
+  title: portfolio-backend API
+  version: 1.0.0
+  description: Backend for souhaibbenfarhat.github.io — service/health endpoints and
+    the streaming AI chat assistant (Server-Sent Events). The PostHog analytics proxy
+    at /ingest/* is an opaque pass-through and is intentionally not documented here.
+paths:
+  /:
+    get:
+      operationId: root_retrieve
+      description: A small, human-readable JSON descriptor listing the service's endpoints.
+      summary: Service descriptor
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceDescriptor'
+          description: ''
+  /chat/conversations/{conversation_id}/:
+    get:
+      operationId: chat_conversations_retrieve
+      description: Fetch a stored conversation's messages (oldest-first, bounded to
+        the most recent 200) to rehydrate the chat widget after a page reload.
+      summary: Restore a conversation
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - chat
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationRestore'
+          description: ''
+        '404':
+          description: Unknown or expired conversation — start fresh.
+  /health:
+    get:
+      operationId: health_retrieve
+      description: Liveness probe used by the host's health check (Render) and uptime
+        monitor.
+      summary: Liveness probe
+      tags:
+      - health
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /healthz:
+    get:
+      operationId: healthz_retrieve
+      description: Liveness probe used by the host's health check (Render) and uptime
+        monitor.
+      summary: Liveness probe
+      tags:
+      - healthz
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+          description: ''
+  /chat/stream:
+    post:
+      operationId: chat_stream_create
+      tags:
+      - chat
+      summary: Stream an assistant reply (Server-Sent Events)
+      description: |-
+        Runs the LangGraph agent and streams its reply as `text/event-stream`.
+
+        The body is `data: <json>\n\n` frames: first a `ChatConversationIdFrame`, then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a message-length cap.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatStreamRequest'
+      responses:
+        '200':
+          description: The SSE stream. Each frame is a `ChatStreamFrame`.
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatStreamFrame'
+        '400':
+          description: Missing/too-long message, or an invalid JSON body.
+        '429':
+          description: Per-IP rate limit exceeded.
+components:
+  schemas:
+    ConversationRestore:
+      type: object
+      description: The stored conversation returned by the restore endpoint.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The conversation's UUID.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          description: Turns oldest-first.
+      required:
+      - id
+      - messages
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Always "ok" when the service is live.
+      required:
+      - status
+    Message:
+      type: object
+      properties:
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          description: |-
+            "user" or "assistant".
+
+            * `user` - User
+            * `assistant` - Assistant
+        content:
+          type: string
+      required:
+      - content
+      - role
+    RoleEnum:
+      enum:
+      - user
+      - assistant
+      type: string
+      description: |-
+        * `user` - User
+        * `assistant` - Assistant
+    ServiceDescriptor:
+      type: object
+      properties:
+        service:
+          type: string
+        status:
+          type: string
+        endpoints:
+          $ref: '#/components/schemas/ServiceEndpoints'
+      required:
+      - endpoints
+      - service
+      - status
+    ServiceEndpoints:
+      type: object
+      properties:
+        health:
+          type: string
+        docs:
+          type: string
+        schema:
+          type: string
+        chat_stream:
+          type: string
+        analytics_proxy:
+          type: string
+      required:
+      - analytics_proxy
+      - chat_stream
+      - docs
+      - health
+      - schema
+    ChatStreamRequest:
+      type: object
+      required:
+      - message
+      properties:
+        message:
+          type: string
+          maxLength: 2000
+          description: The user's message.
+        conversation_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Continue an existing thread; omit to start a new one.
+    ChatConversationIdFrame:
+      type: object
+      description: Always the first frame — the id to continue the thread.
+      required:
+      - conversation_id
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+    ChatTextFrame:
+      type: object
+      description: A chunk of the assistant's answer.
+      required:
+      - text
+      properties:
+        text:
+          type: string
+    ChatToolFrame:
+      type: object
+      description: A tool step, for the frontend's activity animations.
+      required:
+      - tool
+      - status
+      properties:
+        tool:
+          type: string
+          description: Tool name, e.g. get_facts, get_cv, list_github_projects, get_repo_readme.
+        status:
+          type: string
+          enum:
+          - start
+          - end
+    ChatErrorFrame:
+      type: object
+      description: Sent only if every model failed before any text streamed.
+      required:
+      - error
+      properties:
+        error:
+          type: string
+    ChatDoneFrame:
+      type: object
+      description: Always the final frame.
+      required:
+      - done
+      properties:
+        done:
+          type: boolean
+          enum:
+          - true
+    ChatStreamFrame:
+      oneOf:
+      - $ref: '#/components/schemas/ChatConversationIdFrame'
+      - $ref: '#/components/schemas/ChatTextFrame'
+      - $ref: '#/components/schemas/ChatToolFrame'
+      - $ref: '#/components/schemas/ChatErrorFrame'
+      - $ref: '#/components/schemas/ChatDoneFrame'
+      description: One Server-Sent Events frame. Each `data:` line is one of these.
+servers:
+- url: https://portfolio-backend-2huw.onrender.com
+  description: Production
+- url: http://localhost:8000
+  description: Local development

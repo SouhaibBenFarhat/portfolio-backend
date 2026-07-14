@@ -1,0 +1,43 @@
+name: Notify frontend of API changes
+
+# When a push to main changes the OpenAPI spec, tell the frontend repo to regenerate
+# its TypeScript types. The frontend's own workflow does the codegen and opens a PR — so
+# this only needs to fire an event (repository_dispatch), not push anything itself.
+#
+# Requires a repo secret FRONTEND_DISPATCH_TOKEN: a fine-grained PAT scoped to the
+# frontend repo (souhaibbenfarhat.github.io) with "Contents: Read and write" permission
+# (the repository_dispatch API is gated behind Contents write). Until it's set, the job
+# no-ops instead of failing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openapi.yaml"
+
+# Coalesce rapid pushes so we don't fire a burst of dispatches.
+concurrency:
+  group: notify-frontend
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger frontend type regeneration
+        env:
+          TOKEN: ${{ secrets.FRONTEND_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "FRONTEND_DISPATCH_TOKEN not set — skipping dispatch (see README)."
+            exit 0
+          fi
+          status=$(curl -sS -o /dev/stderr -w "%{http_code}" -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/SouhaibBenFarhat/souhaibbenfarhat.github.io/dispatches \
+            -d '{"event_type":"openapi-updated"}')
+          echo "GitHub API responded $status"
+          # 204 = accepted. Anything else is a real failure worth surfacing.
+          [ "$status" = "204" ]
