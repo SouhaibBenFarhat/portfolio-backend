@@ -46,6 +46,27 @@ paths:
           description: ''
         '404':
           description: Unknown or expired conversation — start fresh.
+    delete:
+      operationId: chat_conversations_destroy
+      description: Permanently delete a conversation and all its messages. The client
+        should also drop its stored conversation id. Possessing the UUID is the check.
+      summary: Delete a conversation
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - chat
+      security:
+      - {}
+      responses:
+        '204':
+          description: Conversation deleted.
+        '404':
+          description: Unknown conversation.
   /health:
     get:
       operationId: health_retrieve

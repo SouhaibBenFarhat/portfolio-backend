@@ -61,6 +61,22 @@ class ConversationDetailView(APIView):
         data = ConversationRestoreSerializer({"id": conversation.id, "messages": recent}).data
         return Response(data)
 
+    @extend_schema(
+        responses={
+            204: OpenApiResponse(description="Conversation deleted."),
+            404: OpenApiResponse(description="Unknown conversation."),
+        },
+        summary="Delete a conversation",
+        description="Permanently delete a conversation and all its messages. The client "
+        "should also drop its stored conversation id. Possessing the UUID is the check.",
+    )
+    def delete(self, request, conversation_id):
+        # Messages cascade-delete via the Message.conversation FK (on_delete=CASCADE).
+        deleted, _ = Conversation.objects.filter(id=conversation_id).delete()
+        if not deleted:
+            raise NotFound("conversation not found")
+        return Response(status=204)
+
 
 def _text_of(content) -> str:
     """Plain text from a message's content — a string, or a list of content blocks
