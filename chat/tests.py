@@ -256,7 +256,7 @@ def test_conversation_detail_404_for_unknown_id():
 
 
 @pytest.mark.django_db(transaction=True)
-def test_conversation_detail_rejects_non_get():
+def test_conversation_detail_rejects_unsupported_method():
     async def _run():
         from chat.models import Conversation
 
@@ -264,6 +264,36 @@ def test_conversation_detail_rejects_non_get():
         return await AsyncClient().post(f"/chat/conversations/{conv.id}/")
 
     assert asyncio.run(_run()).status_code == 405
+
+
+@pytest.mark.django_db(transaction=True)
+def test_conversation_delete_removes_conversation_and_messages():
+    """DELETE removes the conversation and cascade-deletes its messages."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conv = await Conversation.objects.acreate()
+        await Message.objects.acreate(conversation=conv, role="user", content="hi")
+        res = await AsyncClient().delete(f"/chat/conversations/{conv.id}/")
+        remaining = await Conversation.objects.filter(id=conv.id).acount()
+        messages_left = await Message.objects.acount()
+        return res.status_code, remaining, messages_left
+
+    status, remaining, messages_left = asyncio.run(_run())
+    assert status == 204
+    assert remaining == 0
+    assert messages_left == 0  # cascade-deleted with the conversation
+
+
+@pytest.mark.django_db(transaction=True)
+def test_conversation_delete_404_for_unknown_id():
+    import uuid as uuidlib
+
+    async def _run():
+        return await AsyncClient().delete(f"/chat/conversations/{uuidlib.uuid4()}/")
+
+    assert asyncio.run(_run()).status_code == 404
 
 
 # --- Phase 3b: knowledge base + admin -------------------------------------
