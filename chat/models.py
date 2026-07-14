@@ -91,12 +91,17 @@ class RequestLog(models.Model):
 
 
 class LLMCredential(models.Model):
-    """An LLM provider API key, managed in the admin. Multiple keys per provider
-    are allowed and tried in order; the key is encrypted at rest."""
+    """An API key for an external service, managed in the admin and encrypted at rest.
+
+    Holds both LLM provider keys (provider is the LiteLLM prefix, e.g. "mistral",
+    "groq") and integration tokens (e.g. "github"). Multiple keys per provider are
+    allowed and tried in order. Storing keys here means they can be added or rotated
+    in the admin with no redeploy — an admin key takes precedence over the env var.
+    """
 
     provider = models.CharField(
         max_length=50,
-        help_text='LiteLLM provider prefix, e.g. "groq" or "gemini".',
+        help_text='Provider / integration name, e.g. "mistral", "groq", or "github".',
     )
     label = models.CharField(
         max_length=100, blank=True, help_text="Optional note, e.g. which account the key is from."
@@ -108,6 +113,8 @@ class LLMCredential(models.Model):
 
     class Meta:
         ordering = ["provider", "id"]
+        verbose_name = "API credential"
+        verbose_name_plural = "API credentials"
 
     def __str__(self):
         return f"{self.provider} ({self.label or 'key'})"

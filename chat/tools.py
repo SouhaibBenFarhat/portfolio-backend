@@ -9,15 +9,29 @@ import httpx
 from django.conf import settings
 from langchain_core.tools import tool
 
-from .models import Document, Fact
+from .models import Document, Fact, LLMCredential
 
 GITHUB_API = "https://api.github.com"
 
 
-def _github_headers(accept: str = "application/vnd.github+json") -> dict:
+async def _github_token() -> str:
+    """The GitHub token. An admin-managed credential (provider="github") takes
+    precedence over the GITHUB_TOKEN env var, so it can be rotated in the admin
+    with no redeploy. Returns "" when neither is set (anonymous, 60 req/hour)."""
+    cred = (
+        await LLMCredential.objects.filter(provider="github", is_active=True)
+        .order_by("id")
+        .afirst()
+    )
+    if cred and cred.api_key:
+        return cred.api_key
+    return settings.GITHUB_TOKEN
+
+
+def _github_headers(token: str = "", accept: str = "application/vnd.github+json") -> dict:
     headers = {"Accept": accept}
-    if settings.GITHUB_TOKEN:
-        headers["Authorization"] = f"Bearer {settings.GITHUB_TOKEN}"
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     return headers
 
 
@@ -58,9 +72,10 @@ async def list_github_projects() -> str:
     """List Souhaib's public GitHub repositories with description, language, and stars."""
     url = f"{GITHUB_API}/users/{settings.GITHUB_USERNAME}/repos"
     params = {"sort": "updated", "per_page": 30, "type": "owner"}
+    headers = _github_headers(await _github_token())
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.get(url, params=params, headers=_github_headers())
+            response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             repos = response.json()
     except httpx.HTTPError as exc:
@@ -78,7 +93,7 @@ async def list_github_projects() -> str:
 async def get_repo_readme(repo: str) -> str:
     """Read the README of one of Souhaib's GitHub repositories, given the repo name."""
     url = f"{GITHUB_API}/repos/{settings.GITHUB_USERNAME}/{repo}/readme"
-    headers = _github_headers(accept="application/vnd.github.raw+json")
+    headers = _github_headers(await _github_token(), accept="application/vnd.github.raw+json")
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(url, headers=headers)
