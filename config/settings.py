@@ -47,6 +47,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "corsheaders",
+    "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",  # vendored Swagger UI / Redoc assets (offline, via whitenoise)
     "core",
     "analytics_proxy",
     "chat",
@@ -139,6 +142,44 @@ CHAT_MAX_HISTORY_MESSAGES = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "20"))  #
 # Rate limit: at most CHAT_RATE_LIMIT requests per IP per CHAT_RATE_WINDOW_SECONDS.
 CHAT_RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "20"))
 CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "600"))
+
+# --- REST framework + OpenAPI docs ----------------------------------------
+# The JSON endpoints are DRF views so drf-spectacular can introspect them into an
+# OpenAPI 3 schema. The API is machine-facing (the frontend is the consumer), so we
+# render JSON only — the human-readable interface is Swagger UI at /api/docs/.
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],  # public API
+    # No authentication: every endpoint is public, so don't advertise basic/session
+    # auth in the schema (it would be misleading and adds needless CSRF surface).
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "portfolio-backend API",
+    "DESCRIPTION": (
+        "Backend for souhaibbenfarhat.github.io — service/health endpoints and the "
+        "streaming AI chat assistant (Server-Sent Events). The PostHog analytics proxy "
+        "at /ingest/* is an opaque pass-through and is intentionally not documented here."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,  # don't list the schema endpoint inside the schema
+    # Serve Swagger UI / Redoc from the vendored sidecar assets, not a CDN.
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
+    # /chat/stream is an async Server-Sent Events view, which DRF can't model, so it's
+    # injected into the schema by a postprocessing hook (see chat/schema.py).
+    "POSTPROCESSING_HOOKS": [
+        "drf_spectacular.hooks.postprocess_schema_enums",
+        "chat.schema.add_chat_stream_path",
+    ],
+    "SERVERS": [
+        {"url": "https://portfolio-backend-2huw.onrender.com", "description": "Production"},
+        {"url": "http://localhost:8000", "description": "Local development"},
+    ],
+}
 
 # --- Production hardening --------------------------------------------------
 if not DEBUG:

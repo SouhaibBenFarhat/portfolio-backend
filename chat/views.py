@@ -14,9 +14,14 @@ from django.conf import settings
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+from rest_framework.exceptions import NotFound
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from .agent import build_agents
 from .models import Conversation, LLMCredential, Message, RequestLog
+from .serializers import ConversationRestoreSerializer
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
 CHAT_HISTORY_FETCH_LIMIT = 200
@@ -27,26 +32,34 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-async def conversation_detail(request, conversation_id):
+class ConversationDetailView(APIView):
     """Return a stored conversation's messages so the client can restore the thread
     after a page reload.
 
-    GET only. Responds 404 when the id is unknown (e.g. Render's free database was
-    reset), which the client treats as "start fresh". Possession of the unguessable
-    UUID is the access check — the same model as the streaming endpoint.
+    Responds 404 when the id is unknown (e.g. Render's free database was reset), which
+    the client treats as "start fresh". Possession of the unguessable UUID is the access
+    check — the same model as the streaming endpoint. A sync DRF view (so drf-spectacular
+    documents it); Django runs it in a threadpool under the async server.
     """
-    if request.method != "GET":
-        return JsonResponse({"error": "GET required"}, status=405)
-    conversation = await Conversation.objects.filter(id=conversation_id).afirst()
-    if conversation is None:
-        return JsonResponse({"error": "conversation not found"}, status=404)
-    # Take the most recent messages (bounded), then restore chronological order.
-    recent = [
-        {"role": msg.role, "content": msg.content}
-        async for msg in conversation.messages.order_by("-created_at")[:CHAT_HISTORY_FETCH_LIMIT]
-    ]
-    recent.reverse()
-    return JsonResponse({"id": str(conversation.id), "messages": recent})
+
+    @extend_schema(
+        responses={
+            200: ConversationRestoreSerializer,
+            404: OpenApiResponse(description="Unknown or expired conversation — start fresh."),
+        },
+        summary="Restore a conversation",
+        description="Fetch a stored conversation's messages (oldest-first, bounded to the "
+        "most recent 200) to rehydrate the chat widget after a page reload.",
+    )
+    def get(self, request, conversation_id):
+        conversation = Conversation.objects.filter(id=conversation_id).first()
+        if conversation is None:
+            raise NotFound("conversation not found")
+        # Take the most recent messages (bounded), then restore chronological order.
+        recent = list(conversation.messages.order_by("-created_at")[:CHAT_HISTORY_FETCH_LIMIT])
+        recent.reverse()
+        data = ConversationRestoreSerializer({"id": conversation.id, "messages": recent}).data
+        return Response(data)
 
 
 def _text_of(content) -> str:

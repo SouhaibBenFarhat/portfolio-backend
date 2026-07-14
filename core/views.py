@@ -1,6 +1,16 @@
-"""Basic service endpoints."""
+"""Basic service endpoints.
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
+`/` and `/health` are DRF views so drf-spectacular documents them in the OpenAPI
+schema. `favicon` stays a plain Django view — it serves an image, not JSON API.
+"""
+
+from django.http import HttpRequest, HttpResponse
+from drf_spectacular.utils import extend_schema
+from rest_framework.decorators import api_view
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from .serializers import HealthSerializer, ServiceDescriptorSerializer
 
 # A small SVG favicon: an "S" monogram on an indigo→violet gradient rounded square.
 FAVICON_SVG = (
@@ -20,20 +30,35 @@ def favicon(request: HttpRequest) -> HttpResponse:
     return HttpResponse(FAVICON_SVG, content_type="image/svg+xml")
 
 
-def index(request: HttpRequest) -> JsonResponse:
+@extend_schema(
+    responses=ServiceDescriptorSerializer,
+    summary="Service descriptor",
+    description="A small, human-readable JSON descriptor listing the service's endpoints.",
+)
+@api_view(["GET"])
+def index(request: Request) -> Response:
     """Root endpoint — a small, human-readable service descriptor."""
-    return JsonResponse(
+    return Response(
         {
             "service": "portfolio-backend",
             "status": "ok",
             "endpoints": {
                 "health": "/health",
+                "docs": "/api/docs/",
+                "schema": "/api/schema/",
+                "chat_stream": "/chat/stream",
                 "analytics_proxy": "/ingest/<path>",
             },
         }
     )
 
 
-def health(request: HttpRequest) -> JsonResponse:
+@extend_schema(
+    responses=HealthSerializer,
+    summary="Liveness probe",
+    description="Liveness probe used by the host's health check (Render) and uptime monitor.",
+)
+@api_view(["GET"])
+def health(request: Request) -> Response:
     """Liveness probe used by the host's health check."""
-    return JsonResponse({"status": "ok"})
+    return Response({"status": "ok"})
