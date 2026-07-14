@@ -225,6 +225,47 @@ def test_conversation_history_is_passed_to_the_agent():
     assert contents == ["I am Sam", "noted", "what did I say?"]
 
 
+@pytest.mark.django_db(transaction=True)
+def test_conversation_detail_returns_messages_in_order():
+    """The restore endpoint returns a conversation's messages, oldest first."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conv = await Conversation.objects.acreate()
+        await Message.objects.acreate(conversation=conv, role="user", content="hi")
+        await Message.objects.acreate(conversation=conv, role="assistant", content="hello!")
+        res = await AsyncClient().get(f"/chat/conversations/{conv.id}/")
+        return res.status_code, json.loads(res.content)
+
+    status, data = asyncio.run(_run())
+    assert status == 200
+    assert [m["role"] for m in data["messages"]] == ["user", "assistant"]
+    assert data["messages"][1]["content"] == "hello!"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_conversation_detail_404_for_unknown_id():
+    """An unknown (or wiped) conversation returns 404 so the client starts fresh."""
+    import uuid as uuidlib
+
+    async def _run():
+        return await AsyncClient().get(f"/chat/conversations/{uuidlib.uuid4()}/")
+
+    assert asyncio.run(_run()).status_code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+def test_conversation_detail_rejects_non_get():
+    async def _run():
+        from chat.models import Conversation
+
+        conv = await Conversation.objects.acreate()
+        return await AsyncClient().post(f"/chat/conversations/{conv.id}/")
+
+    assert asyncio.run(_run()).status_code == 405
+
+
 # --- Phase 3b: knowledge base + admin -------------------------------------
 
 

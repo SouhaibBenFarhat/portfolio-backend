@@ -18,10 +18,35 @@ from django.views.decorators.csrf import csrf_exempt
 from .agent import build_agents
 from .models import Conversation, LLMCredential, Message, RequestLog
 
+# Cap the restore payload so a very long thread can't return an unbounded response.
+CHAT_HISTORY_FETCH_LIMIT = 200
+
 
 def _sse(payload: dict) -> str:
     """Format a dict as a Server-Sent Events `data:` frame."""
     return f"data: {json.dumps(payload)}\n\n"
+
+
+async def conversation_detail(request, conversation_id):
+    """Return a stored conversation's messages so the client can restore the thread
+    after a page reload.
+
+    GET only. Responds 404 when the id is unknown (e.g. Render's free database was
+    reset), which the client treats as "start fresh". Possession of the unguessable
+    UUID is the access check — the same model as the streaming endpoint.
+    """
+    if request.method != "GET":
+        return JsonResponse({"error": "GET required"}, status=405)
+    conversation = await Conversation.objects.filter(id=conversation_id).afirst()
+    if conversation is None:
+        return JsonResponse({"error": "conversation not found"}, status=404)
+    # Take the most recent messages (bounded), then restore chronological order.
+    recent = [
+        {"role": msg.role, "content": msg.content}
+        async for msg in conversation.messages.order_by("-created_at")[:CHAT_HISTORY_FETCH_LIMIT]
+    ]
+    recent.reverse()
+    return JsonResponse({"id": str(conversation.id), "messages": recent})
 
 
 def _text_of(content) -> str:

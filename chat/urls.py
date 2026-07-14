@@ -8,4 +8,9 @@ app_name = "chat"
 
 urlpatterns = [
     path("stream", views.chat_stream, name="stream"),
+    path(
+        "conversations/<uuid:conversation_id>/",
+        views.conversation_detail,
+        name="conversation_detail",
+    ),
 ]
