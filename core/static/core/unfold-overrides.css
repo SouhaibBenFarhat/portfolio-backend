@@ -1,0 +1,142 @@
+/* Elevation bridge for the Unfold admin.
+ *
+ * Unfold's design is flat-with-hairlines: the page, panels, and form fields all
+ * share one background per mode (inputs and the page even share the base-900
+ * token in dark mode), so planes merge visually. The portfolio site instead
+ * separates three planes — page (--bg) → surface cards (--surface + --line
+ * border + shadow) → fields that light up with the accent on focus. This sheet
+ * recreates that grammar. It only references Unfold's emitted tokens
+ * (--color-base-*, --color-primary-*), so the palette itself stays defined once
+ * in settings.UNFOLD["COLORS"]; !important appears only where an Unfold utility
+ * class sets the same property.
+ */
+
+:root {
+  /* Page and field planes are literals, NOT base tokens: Unfold reuses base-50 /
+   * base-950 internally for zebra stripes and hover tints, so tying the page to
+   * them makes every other table row page-colored. */
+  --pf-page: #f6f1e8; /* warm page, one clear step below the white surfaces */
+  --pf-surface: #ffffff; /* the site's --surface */
+  /* One step above the surface — elevation is a tone step, not a shadow.
+   * White is the light-mode ceiling, so raised bars tint gently toward the page. */
+  --pf-surface-raised: #fbf9f5;
+  --pf-field: #f3eee4; /* fields as inset wells */
+  --pf-line: var(--color-base-200);
+  --pf-accent: var(--color-base-600);
+  --pf-focus: var(--color-primary-600); /* site --accent in light mode */
+  /* The site's --shadow-sm / --shadow-md (cards only — bars elevate by tone) */
+  --pf-shadow-sm: 0 1px 2px rgba(22, 24, 29, 0.04), 0 1px 3px rgba(22, 24, 29, 0.06);
+  --pf-shadow-md: 0 2px 4px rgba(22, 24, 29, 0.05), 0 6px 16px rgba(22, 24, 29, 0.08);
+}
+.dark {
+  --pf-page: #13171e; /* dark page, one clear step below the surfaces */
+  --pf-surface: var(--color-base-900); /* the surface plane */
+  --pf-surface-raised: #272e3a; /* one step above the surface */
+  --pf-field: #10141a; /* inset wells, slightly below the page */
+  --pf-line: var(--color-base-800);
+  --pf-focus: var(--color-primary-500); /* site --accent in dark mode */
+  /* Slightly heavier than the site's light shadows, but soft — the tone step
+   * and borders carry the separation; the shadow only feathers the edge. */
+  --pf-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* --- Plane 1: the page ---------------------------------------------------- */
+/* Utilities paint body bg-white/dark:bg-base-900 — and #main paints the whole
+ * content area dark:bg-base-900 too, which would flood the page plane with the
+ * surface color and flatten everything sitting on it. Both belong to the page. */
+body,
+#main {
+  background-color: var(--pf-page) !important;
+}
+
+/* --- Plane 2: surfaces ---------------------------------------------------- */
+/* Unfold "cards" are recognizable by border + rounded-default and are
+ * transparent by default, which flattens them into the page. div-only:
+ * buttons and links carry the same two classes and must keep their own
+ * backgrounds (this selector's specificity would beat their utilities). */
+#main div[class~="border"][class~="rounded-default"],
+#changelist div[class~="border"][class~="rounded-default"] {
+  background-color: var(--pf-surface);
+  box-shadow: var(--pf-shadow-sm);
+}
+
+/* The sidebar and header are surfaces too (the site lifts its header the
+ * same way once you scroll). */
+#nav-sidebar-inner {
+  background-color: var(--pf-surface) !important;
+  border-right: 1px solid var(--pf-line);
+}
+/* The header is two nested bands (#header-inner inside a bg-white/base-900
+ * wrapper) — paint both, or the wrapper shows as a second header behind it.
+ * No divider under it either: it's flush with the page. */
+#header-inner,
+#main div[class~="bg-white"]:has(#header-inner) {
+  background-color: var(--pf-page) !important; /* one step under the surface */
+  border-bottom-color: transparent;
+}
+
+/* The sidebar's logo block: no divider, elevated one tone step. */
+#nav-sidebar div[class~="border-b"] {
+  border-bottom-color: transparent;
+}
+#nav-sidebar div[class~="border-b"]:has(#site-name) {
+  background-color: var(--pf-surface-raised);
+}
+
+/* Bottom bars (the account block in the sidebar, the actions bar in #main):
+ * no border-top, elevated one tone step. */
+#nav-sidebar div[class~="border-t"] {
+  border-top-color: transparent;
+  background-color: var(--pf-surface-raised);
+}
+
+/* The sticky footer action bar is a translucent blur (bg-white/80 or
+ * base-900/80) directly over the page; one step under the sidebar bars. */
+#main div[class~="lg:backdrop-blur-xs"] {
+  background-color: var(--pf-surface) !important;
+}
+
+/* Column headers sit on the surface; tint them one step toward the page so
+ * the table reads as rows-on-a-card, not floating text. */
+#result_list thead th {
+  background-color: color-mix(in srgb, var(--pf-field) 55%, var(--pf-surface));
+}
+
+/* The changelist toolbar strip (search + filters) sits one step above the card. */
+#changelist div:has(> #toolbar) {
+  background-color: var(--pf-surface-raised);
+}
+
+/* Data rows are uniform — no zebra. Every row sits flat on the surface; only
+ * hover gets a whisper of the accent so the pointer still has feedback. */
+#result_list tbody tr,
+#result_list tbody td,
+#result_list tbody th {
+  background-color: var(--pf-surface) !important;
+}
+#result_list tbody tr:hover td,
+#result_list tbody tr:hover th {
+  background-color: color-mix(in srgb, var(--pf-focus) 6%, var(--pf-surface)) !important;
+}
+
+/* --- Plane 3: fields ------------------------------------------------------ */
+/* Inputs get the page tone — inset wells against the elevated surface —
+ * instead of Unfold's bg-white / dark:bg-base-900 (which equals the card in
+ * light mode and the page in dark mode). Disabled/readonly keep Unfold's own
+ * dimmed treatment. */
+#main input[class~="border"]:not([type="checkbox"]):not([type="radio"]):not([disabled]):not([readonly]),
+#main textarea[class~="border"]:not([disabled]):not([readonly]),
+#main select[class~="border"]:not([disabled]) {
+  background-color: var(--pf-field) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Focus: the site's composer treatment — accent border, soft accent halo. */
+#main input[class~="border"]:focus:not([type="checkbox"]):not([type="radio"]),
+#main textarea[class~="border"]:focus,
+#main select[class~="border"]:focus {
+  border-color: var(--pf-focus) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-focus) 18%, transparent) !important;
+  outline: none !important;
+}
