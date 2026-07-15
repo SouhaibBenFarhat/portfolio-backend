@@ -7,6 +7,9 @@ back to env vars. Agents are cached by the set of keys in use, so rotating a key
 in the admin rebuilds them on the next request.
 """
 
+from functools import lru_cache
+
+import litellm
 from django.conf import settings
 from langchain_litellm import ChatLiteLLM
 from langgraph.prebuilt import create_react_agent
@@ -59,6 +62,20 @@ def build_agent(model=None, tools=None):
 
 def _provider_of(model_id: str) -> str:
     return model_id.split("/", 1)[0]
+
+
+@lru_cache(maxsize=8)
+def context_limit(model_id: str) -> int:
+    """The model's context window, in tokens. 0 when unknown.
+
+    Looked up from LiteLLM's model table, so the number tracks the configured model
+    instead of being hardcoded. The id must carry its provider prefix
+    ("mistral/mistral-small-latest"); a bare name raises. Cached — it's a static table.
+    """
+    try:
+        return litellm.get_model_info(model_id).get("max_input_tokens") or 0
+    except Exception:  # noqa: BLE001 — unknown model shouldn't break a chat turn
+        return 0
 
 
 def build_agents(provider_keys: dict) -> tuple:

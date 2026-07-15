@@ -59,6 +59,13 @@ _FRAME_SCHEMAS = {
             "status": {"type": "string", "enum": ["start", "end"]},
         },
     },
+    "ChatUsageFrame": {
+        "type": "object",
+        "description": "How full the thread's context is, for the client's gauge. Sent once, "
+        "just before the done frame, and omitted when the provider reported no usage.",
+        "required": ["usage"],
+        "properties": {"usage": {"$ref": "#/components/schemas/ChatUsage"}},
+    },
     "ChatErrorFrame": {
         "type": "object",
         "description": "Sent only if every model failed before any text streamed.",
@@ -92,9 +99,9 @@ _CHAT_STREAM_PATH = {
         "description": (
             "Runs the LangGraph agent and streams its reply as `text/event-stream`.\n\n"
             "The body is `data: <json>\\n\\n` frames: first a `ChatConversationIdFrame`, "
-            "then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, and "
-            "finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a "
-            "per-IP rate limit and a message-length cap."
+            "then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, then a "
+            "`ChatUsageFrame`, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then "
+            "done). Guarded by a per-IP rate limit and a message-length cap."
         ),
         "requestBody": {
             "required": True,
@@ -112,6 +119,10 @@ _CHAT_STREAM_PATH = {
                 },
             },
             "400": {"description": "Missing/too-long message, or an invalid JSON body."},
+            "403": {
+                "description": "The conversation spent its context budget. Start a new "
+                "chat; the body carries the final `usage` figures."
+            },
             "429": {"description": "Per-IP rate limit exceeded."},
         },
     }

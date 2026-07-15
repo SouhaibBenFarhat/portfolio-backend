@@ -14,6 +14,11 @@ from .fields import EncryptedTextField
 
 class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # How many tokens the model read on this thread's last turn — the whole prompt
+    # (persona + history + tool results), which already includes every earlier reply.
+    # It's the thread's context size, not a running total, so each turn overwrites it.
+    # Once it passes CHAT_MAX_CONTEXT_TOKENS the thread is spent and refuses new messages.
+    context_tokens = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
