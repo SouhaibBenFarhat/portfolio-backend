@@ -40,6 +40,10 @@ ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,.onrender.com")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024 * 1024  # 64 MB
 
 INSTALLED_APPS = [
+    # Admin theme. Must precede django.contrib.admin: its app config swaps admin.site
+    # for the themed UnfoldAdminSite before autodiscovery runs — loaded later, every
+    # model registration would land on the stock site and the admin would be empty.
+    "unfold",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -151,6 +155,47 @@ CHAT_MAX_CONTEXT_TOKENS = int(os.getenv("CHAT_MAX_CONTEXT_TOKENS", "20000"))
 # Rate limit: at most CHAT_RATE_LIMIT requests per IP per CHAT_RATE_WINDOW_SECONDS.
 CHAT_RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "20"))
 CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "600"))
+
+# --- Admin (Unfold theme) -------------------------------------------------
+UNFOLD = {
+    "SITE_TITLE": "portfolio-backend",
+    "SITE_HEADER": "portfolio-backend",
+    "SITE_ICON": "/favicon.svg",  # the service's own favicon route (core.views.favicon)
+    # Match the portfolio site's design tokens (src/styles/global.css in the frontend
+    # repo) so the admin reads as part of the same product. The site's two accent
+    # values sit on the shades Unfold actually renders: primary-600 is the light-mode
+    # accent (--accent #1f6f78), primary-500 the dark-mode one (dark --accent #5cb6be);
+    # the base scale runs from the site's warm off-whites (--bg, --line) into its
+    # dark blue-grays (--line/--surface/--bg in dark mode).
+    "COLORS": {
+        "base": {
+            "50": "#faf8f4",  # site --bg: warm off-white page background
+            "100": "#f2efe8",
+            "200": "#e9e4db",  # site --line: hairline borders
+            "300": "#cfcbc2",
+            "400": "#99a0ac",  # site dark --muted
+            "500": "#7c828e",
+            "600": "#5b616d",  # site --muted: quiet body text
+            "700": "#3a4049",
+            "800": "#222730",  # site dark --line
+            "900": "#14171c",  # site dark --surface (dark page bg); ≈ light ink #16181d
+            "950": "#0d0f12",  # site dark --bg
+        },
+        "primary": {
+            "50": "#eef7f8",
+            "100": "#d8edef",
+            "200": "#b9dfe3",
+            "300": "#93cfd5",
+            "400": "#78c3ca",
+            "500": "#5cb6be",  # site dark --accent
+            "600": "#1f6f78",  # site --accent: restrained petrol/teal
+            "700": "#1a5f68",
+            "800": "#14525a",
+            "900": "#0e4a51",  # site --accent-ink
+            "950": "#08272a",  # the site's dark solid-button ink
+        },
+    },
+}
 
 # --- REST framework + OpenAPI docs ----------------------------------------
 # The JSON endpoints are DRF views so drf-spectacular can introspect them into an

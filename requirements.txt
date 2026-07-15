@@ -1,4 +1,5 @@
-Django>=5.1,<5.2
+# 5.2 is the current LTS (5.1 is end-of-life); django-unfold needs >= 5.2.
+Django>=5.2,<5.3
 gunicorn>=23.0
 whitenoise>=6.7
 django-cors-headers>=4.4
@@ -31,6 +32,11 @@ httpx>=0.27
 
 # Encrypts LLM API keys at rest (admin-managed credentials).
 cryptography>=42
+
+# Modern admin theme (Tailwind-based). It swaps admin.site for its own themed
+# AdminSite; assets ship in the package, are collected by collectstatic, and are
+# served by whitenoise — no CDN.
+django-unfold>=0.100
 
 # REST framework + OpenAPI schema generation. drf-spectacular introspects the DRF
 # views/serializers to produce the OpenAPI 3 spec served at /api/schema/ and rendered
