@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 
 import dj_database_url
+from django.templatetags.static import static
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -168,18 +169,25 @@ UNFOLD = {
     # the base scale runs from the site's warm off-whites (--bg, --line) into its
     # dark blue-grays (--line/--surface/--bg in dark mode).
     "COLORS": {
+        # Derived from the site's tokens, with the light/dark plane deltas widened:
+        # the site's literal values (#faf8f4 vs #ffffff, #14171c vs #0d0f12) are close
+        # enough for small bordered cards, but across the admin's large flat bands
+        # (header, sidebar, footer) they read as one merged surface.
         "base": {
-            "50": "#faf8f4",  # site --bg: warm off-white page background
-            "100": "#f2efe8",
-            "200": "#e9e4db",  # site --line: hairline borders
-            "300": "#cfcbc2",
+            # NOTE: base-50/base-950 are used by Unfold internally for row striping and
+            # hover tints, so they must stay near the surface tone — the page and field
+            # planes get their own literal values in core/static/core/unfold-overrides.css.
+            "50": "#f8f5ef",  # subtle tint (zebra rows, hovers) — a whisper off white
+            "100": "#eee8da",
+            "200": "#d8cfba",  # borders — must be visible, not a whisper
+            "300": "#c0b8a6",
             "400": "#99a0ac",  # site dark --muted
             "500": "#7c828e",
             "600": "#5b616d",  # site --muted: quiet body text
             "700": "#3a4049",
-            "800": "#222730",  # site dark --line
-            "900": "#14171c",  # site dark --surface (dark page bg); ≈ light ink #16181d
-            "950": "#0d0f12",  # site dark --bg
+            "800": "#333c49",  # dark-mode borders
+            "900": "#1e242e",  # dark surfaces — a full step above the page, not a hint
+            "950": "#13171e",  # the dark page — a step below the surfaces, not pitch black
         },
         "primary": {
             "50": "#eef7f8",
@@ -194,7 +202,30 @@ UNFOLD = {
             "900": "#0e4a51",  # site --accent-ink
             "950": "#08272a",  # the site's dark solid-button ink
         },
+        # Unfold's default body text is base-600 in light mode — our base-600 is the
+        # site's *muted* tone, too quiet for whole paragraphs. One step darker reads
+        # like the site's ink while captions/help text stay on the muted tones.
+        "font": {
+            "subtle-light": "var(--color-base-500)",
+            "subtle-dark": "var(--color-base-400)",
+            "default-light": "var(--color-base-700)",
+            "default-dark": "var(--color-base-300)",
+            "important-light": "var(--color-base-900)",
+            "important-dark": "var(--color-base-100)",
+        },
     },
+    # Elevation bridge: Unfold is flat (page, cards, and fields share backgrounds);
+    # this sheet recreates the site's page → surface → field plane system. It only
+    # consumes the tokens above, so the palette stays defined in this one file.
+    # The URL is stamped with the file's mtime: browsers cache static files, and a
+    # stale copy of this sheet silently un-themes the whole admin (fresh HTML +
+    # old CSS renders as broken zebra striping and missing surfaces).
+    "STYLES": [
+        lambda request: (
+            static("core/unfold-overrides.css")
+            + f"?v={int((BASE_DIR / 'core/static/core/unfold-overrides.css').stat().st_mtime)}"
+        )
+    ],
 }
 
 # --- REST framework + OpenAPI docs ----------------------------------------
