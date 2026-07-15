@@ -110,7 +110,7 @@ paths:
       description: |-
         Runs the LangGraph agent and streams its reply as `text/event-stream`.
 
-        The body is `data: <json>\n\n` frames: first a `ChatConversationIdFrame`, then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a message-length cap.
+        The body is `data: <json>\n\n` frames: first a `ChatConversationIdFrame`, then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a message-length cap.
       requestBody:
         required: true
         content:
@@ -126,10 +126,32 @@ paths:
                 $ref: '#/components/schemas/ChatStreamFrame'
         '400':
           description: Missing/too-long message, or an invalid JSON body.
+        '403':
+          description: The conversation spent its context budget. Start a new chat;
+            the body carries the final `usage` figures.
         '429':
           description: Per-IP rate limit exceeded.
 components:
   schemas:
+    ChatUsage:
+      type: object
+      description: The context-gauge figures for a conversation.
+      properties:
+        context_tokens:
+          type: integer
+          description: Tokens the model read on the last turn — the thread's whole
+            prompt (persona + history + tool results), not a running total.
+        context_limit:
+          type: integer
+          description: The thread's token budget.
+        exhausted:
+          type: boolean
+          description: 'True once the budget is spent: further messages are refused
+            with a 403.'
+      required:
+      - context_limit
+      - context_tokens
+      - exhausted
     ConversationRestore:
       type: object
       description: The stored conversation returned by the restore endpoint.
@@ -143,9 +165,14 @@ components:
           items:
             $ref: '#/components/schemas/Message'
           description: Turns oldest-first.
+        usage:
+          allOf:
+          - $ref: '#/components/schemas/ChatUsage'
+          description: Rebuilds the context gauge after a reload.
       required:
       - id
       - messages
+      - usage
     Health:
       type: object
       properties:
@@ -256,6 +283,16 @@ components:
           enum:
           - start
           - end
+    ChatUsageFrame:
+      type: object
+      description: How full the thread's context is, for the client's gauge. Sent
+        once, just before the done frame, and omitted when the provider reported no
+        usage.
+      required:
+      - usage
+      properties:
+        usage:
+          $ref: '#/components/schemas/ChatUsage'
     ChatErrorFrame:
       type: object
       description: Sent only if every model failed before any text streamed.
@@ -279,6 +316,7 @@ components:
       - $ref: '#/components/schemas/ChatConversationIdFrame'
       - $ref: '#/components/schemas/ChatTextFrame'
       - $ref: '#/components/schemas/ChatToolFrame'
+      - $ref: '#/components/schemas/ChatUsageFrame'
       - $ref: '#/components/schemas/ChatErrorFrame'
       - $ref: '#/components/schemas/ChatDoneFrame'
       description: One Server-Sent Events frame. Each `data:` line is one of these.

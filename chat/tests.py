@@ -118,9 +118,54 @@ class _EmptyAgent:
         yield  # unreachable; makes this an async generator
 
 
+class _UsageAgent:
+    """Stand-in that streams a token and reports usage, the way a real provider does.
+
+    Emits two `on_chat_model_end` events to mirror a ReAct turn's two model calls (decide
+    a tool, then answer with its result), with different prompt sizes.
+    """
+
+    def __init__(self, model: str = "mistral/mistral-small-latest"):
+        self._model = model
+
+    def _end(self, input_tokens: int) -> dict:
+        return {
+            "event": "on_chat_model_end",
+            "name": "model",
+            "data": {
+                "output": SimpleNamespace(
+                    content="",
+                    usage_metadata={
+                        "input_tokens": input_tokens,
+                        "output_tokens": 7,
+                        "total_tokens": input_tokens + 7,
+                    },
+                )
+            },
+            "metadata": {"ls_model_name": self._model},
+        }
+
+    async def astream_events(self, payload, version=None):
+        yield _model_stream_event("Hi")
+        yield self._end(120)  # first call: system prompt + history
+        yield self._end(450)  # second call: the above plus the tool's result
+
+
 async def _drain(response) -> str:
     parts = [chunk async for chunk in response.streaming_content]
     return b"".join(parts).decode()
+
+
+def _usage_from(body: str) -> dict | None:
+    """The payload of the stream's `usage` frame, or None if it wasn't sent."""
+    for frame in body.split("\n\n"):
+        line = frame.replace("data: ", "").strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "usage" in data:
+            return data["usage"]
+    return None
 
 
 def _conversation_id_from(body: str) -> str:
@@ -676,3 +721,148 @@ def test_history_sent_to_the_model_is_bounded():
     seen = asyncio.run(_run())
     assert all(len(messages) <= 2 for messages in seen)
     assert max(len(messages) for messages in seen) == 2  # the cap is actually reached
+
+
+# --- Context-window usage --------------------------------------------------
+
+
+def _post_and_drain(agents: tuple) -> str:
+    async def _run():
+        with patch("chat.views.build_agents", return_value=agents):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    return asyncio.run(_run())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_usage_frame_reports_the_largest_prompt_of_the_turn():
+    """A turn makes several model calls; the gauge reports the fullest prompt, not the
+    first one and not the sum."""
+    with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
+        usage = _usage_from(_post_and_drain((_UsageAgent(),)))
+    assert usage["context_tokens"] == 450
+    assert usage["context_limit"] == 20000
+    assert usage["exhausted"] is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_usage_frame_is_sent_before_done():
+    """The client can rely on `usage` arriving while the stream is still open."""
+    body = _post_and_drain((_UsageAgent(),))
+    assert '"usage"' in body
+    assert body.index('"usage"') < body.index('"done"')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_usage_frame_when_the_provider_reports_none():
+    """No usage reported → no frame, so the client never renders a gauge from nothing."""
+    body = _post_and_drain((_RecordingAgent(),))
+    assert _usage_from(body) is None
+    assert '"done": true' in body
+
+
+def test_context_limit_reads_the_model_table():
+    from chat.agent import context_limit
+
+    assert context_limit("mistral/mistral-small-latest") == 131072
+    assert context_limit("not-a-real/model") == 0  # unknown model can't break a turn
+
+
+def test_token_budget_never_exceeds_the_models_window():
+    """A cap set above what the model can read would wedge every chat — it's clamped."""
+    from chat.views import _token_budget
+
+    with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
+        assert _token_budget("mistral/mistral-small-latest") == 20000  # our cap is lower
+    with override_settings(CHAT_MAX_CONTEXT_TOKENS=999_999):
+        assert _token_budget("mistral/mistral-small-latest") == 131072  # clamped to the model
+    with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
+        assert _token_budget("not-a-real/model") == 20000  # unknown window → our cap stands
+
+
+# --- Context budget: the thread is disabled once it's spent -----------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_context_tokens_are_persisted_on_the_conversation():
+    """The gauge must survive a reload, so the turn's context size is stored."""
+
+    async def _run():
+        from chat.models import Conversation
+
+        with patch("chat.views.build_agents", return_value=(_UsageAgent(),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            body = await _drain(response)
+        conversation = await Conversation.objects.aget(id=_conversation_id_from(body))
+        return conversation.context_tokens
+
+    assert asyncio.run(_run()) == 450  # overwritten each turn, not summed
+
+
+@pytest.mark.django_db(transaction=True)
+def test_spent_conversation_refuses_new_messages():
+    """Past the budget the chat is disabled: 403, and no model call is made."""
+
+    async def _run():
+        from chat.models import Conversation
+
+        conversation = await Conversation.objects.acreate(context_tokens=20000)
+        with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi", "conversation_id": str(conversation.id)}),
+                content_type="application/json",
+            )
+        return response.status_code, json.loads(response.content)
+
+    status, data = asyncio.run(_run())
+    assert status == 403
+    assert data["usage"]["exhausted"] is True
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_fresh_conversation_is_never_refused():
+    """The budget is per thread — starting a new chat always works."""
+
+    async def _run():
+        with (
+            override_settings(CHAT_MAX_CONTEXT_TOKENS=20000),
+            patch("chat.views.build_agents", return_value=(_UsageAgent(),)),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+            return response.status_code
+
+    assert asyncio.run(_run()) == 200
+
+
+@pytest.mark.django_db(transaction=True)
+def test_restore_returns_usage_so_the_gauge_survives_a_reload():
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conversation = await Conversation.objects.acreate(context_tokens=4200)
+        await Message.objects.acreate(conversation=conversation, role="user", content="hi")
+        with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
+            res = await AsyncClient().get(f"/chat/conversations/{conversation.id}/")
+        return json.loads(res.content)
+
+    data = asyncio.run(_run())
+    assert data["usage"] == {
+        "context_tokens": 4200,
+        "context_limit": 20000,
+        "exhausted": False,
+    }

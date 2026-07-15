@@ -19,7 +19,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .agent import build_agents
+from .agent import build_agents, context_limit
 from .models import Conversation, LLMCredential, Message, RequestLog
 from .serializers import ConversationRestoreSerializer
 
@@ -30,6 +30,24 @@ CHAT_HISTORY_FETCH_LIMIT = 200
 def _sse(payload: dict) -> str:
     """Format a dict as a Server-Sent Events `data:` frame."""
     return f"data: {json.dumps(payload)}\n\n"
+
+
+def _token_budget(model_id: str) -> int:
+    """A conversation's token ceiling: our configured cap, never above what the model
+    can actually read. Clamping means a misconfigured cap can't wedge every chat."""
+    window = context_limit(model_id)
+    cap = settings.CHAT_MAX_CONTEXT_TOKENS
+    return min(cap, window) if window else cap
+
+
+def _usage_payload(context_tokens: int, model_id: str) -> dict:
+    """The context-gauge figures shared by the stream and the restore endpoint."""
+    budget = _token_budget(model_id)
+    return {
+        "context_tokens": context_tokens,
+        "context_limit": budget,
+        "exhausted": context_tokens >= budget,
+    }
 
 
 class ConversationDetailView(APIView):
@@ -58,7 +76,13 @@ class ConversationDetailView(APIView):
         # Take the most recent messages (bounded), then restore chronological order.
         recent = list(conversation.messages.order_by("-created_at")[:CHAT_HISTORY_FETCH_LIMIT])
         recent.reverse()
-        data = ConversationRestoreSerializer({"id": conversation.id, "messages": recent}).data
+        data = ConversationRestoreSerializer(
+            {
+                "id": conversation.id,
+                "messages": recent,
+                "usage": _usage_payload(conversation.context_tokens, settings.CHAT_MODEL),
+            }
+        ).data
         return Response(data)
 
     @extend_schema(
@@ -129,7 +153,8 @@ async def chat_stream(request):
 
     Expects POST JSON `{"message": "...", "conversation_id": "<optional uuid>"}`.
     The first frame is `{"conversation_id": ...}` (so the client can continue the
-    thread), followed by `{"text": ...}` token frames and a final `{"done": true}`.
+    thread), followed by `{"text": ...}` token frames, a `{"usage": ...}` frame with
+    the turn's context-window figures, and a final `{"done": true}`.
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -149,6 +174,17 @@ async def chat_stream(request):
         return JsonResponse({"error": "message is too long"}, status=400)
 
     conversation = await _get_or_create_conversation(payload.get("conversation_id"))
+
+    # This thread has read its budget's worth of context; every further turn would resend
+    # all of it. Stop here instead, and let the visitor start a fresh conversation.
+    if conversation.context_tokens >= _token_budget(settings.CHAT_MODEL):
+        return JsonResponse(
+            {
+                "error": "this conversation has reached its context limit, start a new chat",
+                "usage": _usage_payload(conversation.context_tokens, settings.CHAT_MODEL),
+            },
+            status=403,
+        )
 
     # Build the model's input from stored history plus the new message, bounded to the
     # most recent messages so a long thread can't blow the context window or cost.
@@ -173,6 +209,8 @@ async def chat_stream(request):
         reply_parts = []
         emitted = False  # whether any text/tool frame has been sent to the client
         error = None
+        prompt_tokens = 0  # set per attempt below; bound here in case `agents` is empty
+        usage_model = settings.CHAT_MODEL
         # Per-turn failover: try each model in order. Only fall back to the next model
         # if nothing has streamed yet — never switch models mid-answer.
         # Try each model in order. Regenerate on an *empty* response too (not just on
@@ -182,6 +220,10 @@ async def chat_stream(request):
             final_text = ""  # the answer, in case it arrives as one message not streamed
             got_text = False
             tools_shown = False
+            # Context-window figures for this attempt. Reset per agent so a failed or
+            # empty attempt's numbers don't leak into the one that actually answers.
+            prompt_tokens = 0
+            usage_model = settings.CHAT_MODEL
             try:
                 async for event in agent.astream_events({"messages": history}, version="v2"):
                     kind = event["event"]
@@ -192,9 +234,22 @@ async def chat_stream(request):
                             got_text = emitted = True
                             yield _sse({"text": token})
                     elif kind == "on_chat_model_end":
-                        content = _text_of(getattr(event["data"].get("output"), "content", ""))
+                        output = event["data"].get("output")
+                        content = _text_of(getattr(output, "content", ""))
                         if content:
                             final_text = content
+                        # A ReAct turn makes several model calls (decide a tool, then
+                        # answer with its result). The largest prompt is the fullest the
+                        # context got, which is what the client's gauge should show.
+                        usage = getattr(output, "usage_metadata", None) or {}
+                        if (usage.get("input_tokens") or 0) > prompt_tokens:
+                            prompt_tokens = usage["input_tokens"]
+                            # ChatLiteLLM reports the prefixed id ("mistral/…"), which is
+                            # what context_limit() needs; failover may change which model
+                            # answered, so read it from the event rather than assuming.
+                            usage_model = (event.get("metadata") or {}).get(
+                                "ls_model_name"
+                            ) or usage_model
                     elif kind == "on_tool_start":
                         tools_shown = emitted = True
                         yield _sse({"tool": event["name"], "status": "start"})
@@ -228,6 +283,14 @@ async def chat_stream(request):
             await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply
             )
+
+        # Record how full the thread's context got, so the next turn can be refused once
+        # it's spent and a reload can restore the gauge. Omitted when the provider
+        # reported no usage, so a missing number never looks like an empty context.
+        if prompt_tokens:
+            conversation.context_tokens = prompt_tokens
+            await conversation.asave(update_fields=["context_tokens", "updated_at"])
+            yield _sse({"usage": _usage_payload(prompt_tokens, usage_model)})
         yield _sse({"done": True})
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
