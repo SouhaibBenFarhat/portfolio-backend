@@ -5,12 +5,13 @@ Conversations are shown read-only so you can review chats without editing them.
 """
 
 from django.contrib import admin
+from unfold.admin import ModelAdmin, TabularInline
 
 from .models import Conversation, Document, Fact, LLMCredential, Message
 
 
 @admin.register(LLMCredential)
-class LLMCredentialAdmin(admin.ModelAdmin):
+class LLMCredentialAdmin(ModelAdmin):
     list_display = ("provider", "label", "masked_key", "is_active", "updated_at")
     list_filter = ("provider", "is_active")
     list_editable = ("is_active",)
@@ -23,7 +24,7 @@ class LLMCredentialAdmin(admin.ModelAdmin):
 
 
 @admin.register(Fact)
-class FactAdmin(admin.ModelAdmin):
+class FactAdmin(ModelAdmin):
     list_display = ("question", "category", "is_active", "order", "updated_at")
     list_editable = ("is_active", "order")
     list_filter = ("category", "is_active")
@@ -31,14 +32,14 @@ class FactAdmin(admin.ModelAdmin):
 
 
 @admin.register(Document)
-class DocumentAdmin(admin.ModelAdmin):
+class DocumentAdmin(ModelAdmin):
     list_display = ("title", "slug", "is_active", "updated_at")
     list_filter = ("is_active",)
     search_fields = ("title", "content", "slug")
     prepopulated_fields = {"slug": ("title",)}
 
 
-class MessageInline(admin.TabularInline):
+class MessageInline(TabularInline):
     model = Message
     extra = 0
     readonly_fields = ("role", "content", "created_at")
@@ -49,7 +50,7 @@ class MessageInline(admin.TabularInline):
 
 
 @admin.register(Conversation)
-class ConversationAdmin(admin.ModelAdmin):
+class ConversationAdmin(ModelAdmin):
     list_display = ("id", "created_at", "updated_at")
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = [MessageInline]
