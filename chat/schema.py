@@ -49,12 +49,17 @@ _FRAME_SCHEMAS = {
     "ChatToolFrame": {
         "type": "object",
         "description": "A tool step, for the frontend's activity animations.",
-        "required": ["tool", "status"],
+        "required": ["tool", "label", "status"],
         "properties": {
             "tool": {
                 "type": "string",
-                "description": "Tool name, e.g. get_facts, get_cv, list_documents, "
+                "description": "Raw tool name, e.g. get_facts, get_cv, list_documents, "
                 "read_document, list_github_projects, get_repo_readme.",
+            },
+            "label": {
+                "type": "string",
+                "description": 'Human-readable label for the step, e.g. "reading the CV". '
+                "A generic fallback is sent for a tool with no configured label.",
             },
             "status": {"type": "string", "enum": ["start", "end"]},
         },

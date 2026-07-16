@@ -391,10 +391,19 @@ def test_stream_emits_tool_step_events():
 
     body = asyncio.run(_run())
     assert '"tool": "get_facts"' in body
+    assert '"label": "loading facts"' in body  # the human-readable label rides along
     assert '"status": "start"' in body
     assert '"status": "end"' in body
     assert '"text": "Here you go"' in body
     assert '"done": true' in body
+
+
+def test_tool_label_maps_known_names_and_falls_back():
+    from chat.tools import tool_label
+
+    assert tool_label("get_cv") == "reading the CV"
+    assert tool_label("read_document") == "reading a document"
+    assert tool_label("not_a_tool") == "working"  # unmapped tool never leaks a function name
 
 
 @pytest.mark.django_db(transaction=True)
