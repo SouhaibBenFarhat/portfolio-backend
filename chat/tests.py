@@ -1061,3 +1061,453 @@ def test_guard_can_be_disabled():
     body = asyncio.run(_run())
     assert "anything at all here." in body  # streamed despite the blocking guard...
     assert guard_spy.await_count == 0  # ...because the guard was never called
+
+
+# --- Document upload + document tools ---------------------------------------
+
+
+def _tiny_pdf(text: str) -> bytes:
+    """A minimal one-page PDF containing `text`, assembled by hand with a correct
+    xref table (pypdf needs one to parse) — no PDF-writing dependency required."""
+    stream = f"BT /F1 24 Tf 72 720 Td ({text}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        b"/Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode() + obj + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode() + b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 00000 n \n".encode()
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF"
+    ).encode()
+    return bytes(out)
+
+
+def _tiny_docx(text: str) -> bytes:
+    from io import BytesIO
+
+    from docx import Document as DocxDocument
+
+    buffer = BytesIO()
+    docx = DocxDocument()
+    docx.add_paragraph(text)
+    docx.save(buffer)
+    return buffer.getvalue()
+
+
+def test_extract_text_from_pdf():
+    from chat.extraction import extract_text
+
+    assert "Hello PDF" in extract_text(_tiny_pdf("Hello PDF"), "cv.pdf")
+
+
+def test_extract_text_from_docx():
+    from chat.extraction import extract_text
+
+    assert "Ten years of Django" in extract_text(_tiny_docx("Ten years of Django"), "cv.docx")
+
+
+def test_extract_text_from_plain_text():
+    from chat.extraction import extract_text
+
+    assert extract_text(b"plain words", "notes.txt") == "plain words"
+
+
+def test_extract_rejects_unsupported_file_type():
+    from chat.extraction import extract_text
+
+    with pytest.raises(ValueError, match="Unsupported file type"):
+        extract_text(b"x", "cv.exe")
+
+
+def test_extract_rejects_a_pdf_with_no_text():
+    """A scanned/image-only PDF yields no text — a readable error, not silent emptiness."""
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+
+    from chat.extraction import extract_text
+
+    buffer = BytesIO()
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.write(buffer)
+    with pytest.raises(ValueError, match="No text"):
+        extract_text(buffer.getvalue(), "scan.pdf")
+
+
+@pytest.mark.django_db
+def test_admin_upload_extracts_text_and_stores_blob():
+    """Uploading a file fills `content` with its text (for the agent) and keeps the
+    original bytes (for the admin preview)."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from chat.admin import DocumentAdmin, DocumentAdminForm
+    from chat.models import Document
+
+    pdf = _tiny_pdf("Ten years of Django")
+    form = DocumentAdminForm(
+        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        files={"upload": SimpleUploadedFile("cv.pdf", pdf, content_type="application/pdf")},
+    )
+    assert form.is_valid(), form.errors
+    obj = form.save(commit=False)
+    DocumentAdmin(Document, django_admin.site).save_model(None, obj, form, change=False)
+
+    saved = Document.objects.get(slug="cv")
+    assert "Ten years of Django" in saved.content
+    assert bytes(saved.file_data) == pdf
+    assert saved.file_content_type == "application/pdf"
+    assert saved.file_name == "cv.pdf"
+    assert saved.file_uploaded_at is not None
+
+
+@pytest.mark.django_db
+def test_admin_form_requires_content_or_a_file():
+    from chat.admin import DocumentAdminForm
+
+    form = DocumentAdminForm(data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"})
+    assert not form.is_valid()
+    assert "content" in form.errors
+
+
+@pytest.mark.django_db
+def test_admin_form_rejects_an_oversized_file():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from chat.admin import DocumentAdminForm
+
+    big = SimpleUploadedFile("cv.pdf", b"x" * (10 * 1024 * 1024 + 1))
+    form = DocumentAdminForm(
+        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        files={"upload": big},
+    )
+    assert not form.is_valid()
+    assert "too large" in str(form.errors["upload"])
+
+
+@pytest.mark.django_db
+def test_document_file_is_served_to_staff(client):
+    from django.contrib.auth.models import User
+
+    from chat.models import Document
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    doc = Document.objects.create(
+        slug="cv",
+        title="CV",
+        content="x",
+        file_data=b"%PDF-fake",
+        file_name="cv.pdf",
+        file_content_type="application/pdf",
+    )
+    response = client.get(f"/admin/chat/document/{doc.pk}/file/")
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/pdf"
+    assert response.content == b"%PDF-fake"
+    assert "inline" in response["Content-Disposition"]
+
+
+@pytest.mark.django_db
+def test_document_admin_pages_render_with_upload_and_preview(client):
+    """The add page carries the upload field and the change page shows the PDF preview
+    iframe — catches template/form breakage the form-level tests can't see."""
+    from django.contrib.auth.models import User
+
+    from chat.models import Document
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    add_page = client.get("/admin/chat/document/add/")
+    assert add_page.status_code == 200
+    assert b'name="upload"' in add_page.content
+
+    doc = Document.objects.create(
+        slug="cv",
+        title="CV",
+        content="x",
+        file_data=b"%PDF-fake",
+        file_name="cv.pdf",
+        file_content_type="application/pdf",
+    )
+    change_page = client.get(f"/admin/chat/document/{doc.pk}/change/")
+    assert change_page.status_code == 200
+    assert b"<iframe" in change_page.content
+    assert f"/admin/chat/document/{doc.pk}/file/".encode() in change_page.content
+
+
+@pytest.mark.django_db
+def test_document_file_requires_admin_login(client):
+    """The blob is admin-only — anonymous requests are sent to the login page."""
+    from chat.models import Document
+
+    doc = Document.objects.create(slug="cv", title="CV", content="x", file_data=b"d")
+    response = client.get(f"/admin/chat/document/{doc.pk}/file/")
+    assert response.status_code == 302
+    assert "/admin/login/" in response["Location"]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_list_documents_tool_lists_only_active_documents():
+    from chat.models import Document
+    from chat.tools import list_documents
+
+    async def _run():
+        await Document.objects.acreate(slug="cv", title="Résumé", content="…")
+        await Document.objects.acreate(
+            slug="old-letter", title="Old letter", content="…", is_active=False
+        )
+        return await list_documents.ainvoke({})
+
+    result = asyncio.run(_run())
+    assert "cv: Résumé" in result
+    assert "old-letter" not in result  # inactive documents are excluded
+
+
+@pytest.mark.django_db(transaction=True)
+def test_read_document_tool_returns_the_content():
+    from chat.models import Document
+    from chat.tools import read_document
+
+    async def _run():
+        await Document.objects.acreate(
+            slug="cover-letter", title="Cover letter", content="I build backends."
+        )
+        return await read_document.ainvoke({"slug": "cover-letter"})
+
+    assert "I build backends." in asyncio.run(_run())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_read_document_tool_handles_an_unknown_slug():
+    from chat.tools import read_document
+
+    async def _run():
+        return await read_document.ainvoke({"slug": "nope"})
+
+    assert "No document named 'nope'" in asyncio.run(_run())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_read_document_output_is_capped():
+    """A very long document can't blow the context window through the tool."""
+    from chat.models import Document
+    from chat.tools import read_document
+
+    async def _run():
+        await Document.objects.acreate(slug="book", title="Book", content="x" * 7000)
+        return await read_document.ainvoke({"slug": "book"})
+
+    assert len(asyncio.run(_run())) == 6000
+
+
+def test_document_tools_are_wired_into_the_agent():
+    from chat.agent import TOOLS
+
+    names = {tool.name for tool in TOOLS}
+    assert {"list_documents", "read_document"} <= names
+
+
+@pytest.mark.django_db(transaction=True)
+def test_read_document_tool_excludes_inactive_documents():
+    from chat.models import Document
+    from chat.tools import read_document
+
+    async def _run():
+        await Document.objects.acreate(
+            slug="old-letter", title="Old letter", content="stale", is_active=False
+        )
+        return await read_document.ainvoke({"slug": "old-letter"})
+
+    assert "No document named" in asyncio.run(_run())  # inactive documents are excluded
+
+
+def test_document_tools_defer_the_file_blob():
+    """The tools only read text — pulling a multi-MB upload out of Postgres on every
+    chat turn would spike the single 512MB worker."""
+    from chat.tools import _documents
+
+    deferred, _ = _documents().query.deferred_loading
+    assert "file_data" in deferred
+
+
+@pytest.mark.django_db
+def test_admin_changelist_defers_the_file_blob(rf):
+    """Same reasoning as the tools: listing documents must not load every blob."""
+    from django.contrib.auth.models import User
+
+    from chat.admin import DocumentAdmin
+    from chat.models import Document
+
+    request = rf.get("/admin/chat/document/")
+    request.user = User.objects.create_superuser("admin", "a@example.com", "pw")
+    queryset = DocumentAdmin(Document, django_admin.site).get_queryset(request)
+    deferred, _ = queryset.query.deferred_loading
+    assert "file_data" in deferred
+
+
+@pytest.mark.django_db
+def test_admin_edit_without_new_upload_preserves_the_blob():
+    """Hand-fixing the extracted text (the documented workflow) must not lose the file."""
+    from chat.admin import DocumentAdmin, DocumentAdminForm
+    from chat.models import Document
+
+    doc = Document.objects.create(
+        slug="cv", title="CV", content="rough text", file_data=b"%PDF-orig", file_name="cv.pdf"
+    )
+    form = DocumentAdminForm(
+        data={"slug": "cv", "title": "CV", "content": "fixed text", "is_active": "on"},
+        instance=doc,
+    )
+    assert form.is_valid(), form.errors
+    obj = form.save(commit=False)
+    DocumentAdmin(Document, django_admin.site).save_model(None, obj, form, change=True)
+
+    saved = Document.objects.get(slug="cv")
+    assert saved.content == "fixed text"
+    assert bytes(saved.file_data) == b"%PDF-orig"
+    assert saved.file_name == "cv.pdf"
+
+
+@pytest.mark.django_db
+def test_admin_reupload_replaces_content_and_blob():
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from chat.admin import DocumentAdmin, DocumentAdminForm
+    from chat.models import Document
+
+    doc = Document.objects.create(
+        slug="cv", title="CV", content="old", file_data=b"old-bytes", file_name="old.pdf"
+    )
+    form = DocumentAdminForm(
+        data={"slug": "cv", "title": "CV", "content": "old", "is_active": "on"},
+        files={"upload": SimpleUploadedFile("new.txt", b"brand new text")},
+        instance=doc,
+    )
+    assert form.is_valid(), form.errors
+    obj = form.save(commit=False)
+    DocumentAdmin(Document, django_admin.site).save_model(None, obj, form, change=True)
+
+    saved = Document.objects.get(slug="cv")
+    assert saved.content == "brand new text"
+    assert bytes(saved.file_data) == b"brand new text"
+    assert saved.file_name == "new.txt"
+
+
+@pytest.mark.django_db
+def test_admin_remove_file_clears_the_blob_but_keeps_content():
+    from chat.admin import DocumentAdmin, DocumentAdminForm
+    from chat.models import Document
+
+    doc = Document.objects.create(
+        slug="cv",
+        title="CV",
+        content="keep me",
+        file_data=b"bytes",
+        file_name="cv.pdf",
+        file_content_type="application/pdf",
+    )
+    form = DocumentAdminForm(
+        data={
+            "slug": "cv",
+            "title": "CV",
+            "content": "keep me",
+            "is_active": "on",
+            "remove_file": "on",
+        },
+        instance=doc,
+    )
+    assert form.is_valid(), form.errors
+    obj = form.save(commit=False)
+    DocumentAdmin(Document, django_admin.site).save_model(None, obj, form, change=True)
+
+    saved = Document.objects.get(slug="cv")
+    assert saved.content == "keep me"
+    assert saved.file_data is None
+    assert saved.file_name == ""
+    assert saved.file_content_type == ""
+    assert saved.file_uploaded_at is None
+
+
+@pytest.mark.django_db
+def test_uploaded_filename_control_characters_are_stripped():
+    """A CR/LF smuggled into a filename would make every later Content-Disposition
+    header raise BadHeaderError — a permanent 500 on the preview."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from chat.admin import DocumentAdmin, DocumentAdminForm
+    from chat.models import Document
+
+    form = DocumentAdminForm(
+        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        files={"upload": SimpleUploadedFile("a\r\nSet-Cookie: x.txt", b"hi")},
+    )
+    assert form.is_valid(), form.errors
+    obj = form.save(commit=False)
+    DocumentAdmin(Document, django_admin.site).save_model(None, obj, form, change=False)
+
+    assert Document.objects.get(slug="cv").file_name == "aSet-Cookie: x.txt"
+
+
+@pytest.mark.django_db
+def test_document_file_handles_unicode_filenames(client):
+    """Non-latin-1 names (a Word-export en-dash) must not mangle the header — the
+    RFC 5987 filename* form is used instead of a bare f-string."""
+    from django.contrib.auth.models import User
+
+    from chat.models import Document
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    doc = Document.objects.create(
+        slug="cv",
+        title="CV",
+        content="x",
+        file_data=b"%PDF-fake",
+        file_name="CV – Souhaib.pdf",
+        file_content_type="application/pdf",
+    )
+    response = client.get(f"/admin/chat/document/{doc.pk}/file/")
+    assert response.status_code == 200
+    assert "filename*=utf-8''" in response["Content-Disposition"]
+    assert response["X-Frame-Options"] == "SAMEORIGIN"  # keeps the preview iframe working
+
+
+@pytest.mark.django_db
+def test_document_file_404_when_no_file_uploaded(client):
+    from django.contrib.auth.models import User
+
+    from chat.models import Document
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    doc = Document.objects.create(slug="cv", title="CV", content="paste-only, no file")
+    assert client.get(f"/admin/chat/document/{doc.pk}/file/").status_code == 404
+
+
+@pytest.mark.django_db
+def test_document_file_denied_to_staff_without_permission(client):
+    """admin_view() only checks is_staff — the view must also enforce the Document
+    view permission, or any staff account could fetch every uploaded blob."""
+    from django.contrib.auth.models import User
+
+    from chat.models import Document
+
+    client.force_login(User.objects.create_user("limited", "l@example.com", "pw", is_staff=True))
+    doc = Document.objects.create(slug="cv", title="CV", content="x", file_data=b"secret")
+    assert client.get(f"/admin/chat/document/{doc.pk}/file/").status_code == 403
+
+
+def test_extract_rejects_corrupt_bytes():
+    """Garbage with a supported extension becomes a readable form error, not a crash."""
+    from chat.extraction import extract_text
+
+    with pytest.raises(ValueError, match="Could not read"):
+        extract_text(b"not a real pdf at all", "cv.pdf")

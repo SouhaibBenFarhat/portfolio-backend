@@ -53,8 +53,8 @@ _FRAME_SCHEMAS = {
         "properties": {
             "tool": {
                 "type": "string",
-                "description": "Tool name, e.g. get_facts, get_cv, list_github_projects, "
-                "get_repo_readme.",
+                "description": "Tool name, e.g. get_facts, get_cv, list_documents, "
+                "read_document, list_github_projects, get_repo_readme.",
             },
             "status": {"type": "string", "enum": ["start", "end"]},
         },

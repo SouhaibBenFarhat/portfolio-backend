@@ -14,9 +14,16 @@ from django.conf import settings
 from langchain_litellm import ChatLiteLLM
 from langgraph.prebuilt import create_react_agent
 
-from .tools import get_cv, get_facts, get_repo_readme, list_github_projects
+from .tools import (
+    get_cv,
+    get_facts,
+    get_repo_readme,
+    list_documents,
+    list_github_projects,
+    read_document,
+)
 
-TOOLS = [get_facts, get_cv, list_github_projects, get_repo_readme]
+TOOLS = [get_facts, get_cv, list_documents, read_document, list_github_projects, get_repo_readme]
 
 SYSTEM_PROMPT = (
     "You are Souhaib Ben Farhat's friendly AI assistant on his developer portfolio — "
@@ -28,8 +35,10 @@ SYSTEM_PROMPT = (
     "inviting a natural follow-up (e.g. suggest something else they might want to know).\n\n"
     "Ground your answers in real data with your tools rather than guessing: get_facts "
     "for salary, availability, location, or hobbies; get_cv for experience, skills, and "
-    "education; list_github_projects to show his work; get_repo_readme to dig into a "
-    "specific project. For greetings or small talk, just reply warmly without a tool. "
+    "education; list_documents and read_document for his other documents (cover "
+    "letters, certificates, anything he has uploaded); list_github_projects to show his "
+    "work; get_repo_readme to dig into a specific project. For greetings or small talk, "
+    "just reply warmly without a tool. "
     "If you need information, call the tool right now in this same turn and then answer "
     "— never tell the user you'll 'look it up', 'check', or 'try again', and never end a "
     "turn promising to do something you haven't done. If a tool returns no data, plainly "

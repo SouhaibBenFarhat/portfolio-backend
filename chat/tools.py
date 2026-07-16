@@ -60,11 +60,37 @@ async def get_facts(category: str = "") -> str:
     return "\n".join(facts) if facts else "No facts found."
 
 
+def _documents():
+    """Active documents with the upload blob deferred: the tools only ever read text,
+    and dragging a multi-megabyte file out of Postgres on every chat turn would spike
+    the single 512MB worker."""
+    return Document.objects.filter(is_active=True).defer("file_data")
+
+
 @tool
 async def get_cv() -> str:
     """Read Souhaib's CV / résumé — experience, skills, and education."""
-    doc = await Document.objects.filter(slug="cv", is_active=True).afirst()
+    doc = await _documents().filter(slug="cv").afirst()
     return doc.content if doc else "No CV is available yet."
+
+
+@tool
+async def list_documents() -> str:
+    """List the documents available about Souhaib (slug and title) — e.g. his CV,
+    cover letter, certificates, or anything else he has uploaded. Read one with
+    read_document(slug)."""
+    docs = [f"- {doc.slug}: {doc.title}" async for doc in _documents()]
+    return "\n".join(docs) if docs else "No documents are available yet."
+
+
+@tool
+async def read_document(slug: str) -> str:
+    """Read one of Souhaib's documents by its slug (see list_documents) — e.g. a cover
+    letter or a certificate. For his CV / experience / skills, prefer get_cv."""
+    doc = await _documents().filter(slug=slug).afirst()
+    if not doc:
+        return f"No document named '{slug}' was found."
+    return doc.content[:6000]  # cap size so a long document can't blow the context window
 
 
 @tool
