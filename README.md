@@ -186,6 +186,35 @@ bonus, emails on downtime. One always-on service stays within Render's free
 > monitor is the reliable choice. The proper fix for zero cold starts is a paid
 > always-on plan (or a host whose free tier doesn't sleep, e.g. Koyeb).
 
+## AI chat — safety & guardrails
+
+The chat assistant is a public, LLM-backed endpoint, so it's hardened against abuse and
+prompt injection in layers. Prompt injection is an unsolved problem, so the goal isn't a
+silver bullet — it's to shrink both the odds of a bad reply and its blast radius:
+
+- **Least privilege.** The agent's tools are strictly **read-only** (facts, CV, public
+  GitHub) and expose nothing sensitive, so even a fully hijacked model can't take a
+  harmful action — the worst case is words on a screen.
+- **Output guardrail.** Every reply is reviewed by a second model call **before it
+  reaches the browser**. The stream is buffered into sentence-sized chunks; each chunk is
+  checked in context and only released if it passes, so nothing unvetted is ever shown
+  (see [`chat/guard.py`](./chat/guard.py) and `event_stream` in
+  [`chat/views.py`](./chat/views.py)). A vetoed answer is replaced with a professional
+  redirect. This keeps the streaming feel — text appears a chunk at a time — while
+  staying secure, entirely in the backend (no frontend change).
+- **Strict scope.** The guard enforces that replies stay professional and on-topic — only
+  Souhaib's CV, experience, skills, projects, and recruitment questions. Off-topic
+  answers, system-prompt leaks, and "ignore your instructions" role-changes are vetoed.
+- **Rate limiting.** Per real client IP (Cloudflare's `CF-Connecting-IP`, not the
+  spoofable `X-Forwarded-For`): 10 requests / 60s. Blocks one abuser without affecting
+  anyone else.
+- **Fail-open.** If the guard can't run (no key) or errors, it lets the reply through
+  rather than breaking the chat — a deliberate availability trade-off, tunable via
+  `CHAT_GUARD_ENABLED`.
+
+Guard knobs (all env vars): `CHAT_GUARD_ENABLED` (default on), `CHAT_GUARD_MODEL`
+(defaults to the chat model), `CHAT_GUARD_MAX_CHARS` (chunk size before a force-review).
+
 ## Roadmap
 
 - [x] Deployed running server + health check + CI
