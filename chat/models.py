@@ -69,11 +69,25 @@ class Fact(models.Model):
 
 
 class Document(models.Model):
-    """Long-form content (CV, bio) the assistant can read (edited in the admin)."""
+    """Long-form content (CV, bio) the assistant can read (edited in the admin).
+
+    A document can be uploaded as a file (PDF, Word, text) in the admin: its text is
+    extracted into `content` — the only form the agent's tools read — and the original
+    bytes are kept in `file_data` so the admin can preview/download the file. The blob
+    lives in the database, not on disk, because Render's free-tier disk is ephemeral
+    (the same reason the app uses Postgres over SQLite).
+    """
 
     slug = models.SlugField(unique=True, help_text='Stable id, e.g. "cv" or "bio".')
     title = models.CharField(max_length=200)
-    content = models.TextField()
+    content = models.TextField(
+        help_text="What the assistant reads. Filled from an uploaded file's extracted "
+        "text — editable afterwards, e.g. to fix a rough PDF extraction."
+    )
+    file_data = models.BinaryField(null=True, blank=True)  # original upload, for preview
+    file_name = models.CharField(max_length=255, blank=True, editable=False)
+    file_content_type = models.CharField(max_length=100, blank=True, editable=False)
+    file_uploaded_at = models.DateTimeField(null=True, blank=True, editable=False)
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 

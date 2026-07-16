@@ -33,6 +33,12 @@ httpx>=0.27
 # Encrypts LLM API keys at rest (admin-managed credentials).
 cryptography>=42
 
+# Extract text from documents uploaded in the admin (CV, cover letters) so the agent
+# can read them: pypdf for PDF, python-docx for Word. Both pure-Python — light enough
+# for the 512MB single-worker instance.
+pypdf>=6.0
+python-docx>=1.1
+
 # Modern admin theme (Tailwind-based). It swaps admin.site for its own themed
 # AdminSite; assets ship in the package, are collected by collectstatic, and are
 # served by whitenoise — no CDN.
