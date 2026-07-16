@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 from django.conf import settings
 from django.contrib import admin as django_admin
-from django.test import AsyncClient, override_settings
+from django.test import AsyncClient, RequestFactory, override_settings
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage
 
@@ -684,6 +684,55 @@ def test_rate_limit_blocks_after_the_limit():
     assert asyncio.run(_run()) == [200, 200, 429]
 
 
+def test_client_ip_prefers_cloudflare_header_over_forwarded_for():
+    """The rate-limit key is Cloudflare's real client IP (CF-Connecting-IP), never the
+    spoofable X-Forwarded-For, whose leftmost entry the client controls."""
+    from chat.views import _client_ip
+
+    request = RequestFactory().post(
+        "/chat/stream",
+        HTTP_CF_CONNECTING_IP="203.0.113.7",
+        HTTP_X_FORWARDED_FOR="1.2.3.4",  # spoofable — must be ignored when the CF header is set
+    )
+    assert _client_ip(request) == "203.0.113.7"
+
+
+def test_client_ip_falls_back_to_remote_addr_locally():
+    """No Cloudflare in front (local dev) → REMOTE_ADDR, so the key is still stable."""
+    from chat.views import _client_ip
+
+    request = RequestFactory().post("/chat/stream", REMOTE_ADDR="198.51.100.9")
+    assert _client_ip(request) == "198.51.100.9"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rate_limit_key_ignores_spoofed_forwarded_for():
+    """An abuser rotating X-Forwarded-For can't mint fresh rate-limit buckets: the key
+    comes from Cloudflare's CF-Connecting-IP, which the client can't forge."""
+
+    async def _run():
+        statuses = []
+        with (
+            override_settings(CHAT_RATE_LIMIT=2, CHAT_RATE_WINDOW_SECONDS=60),
+            patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
+        ):
+            client = AsyncClient()
+            for i in range(3):
+                response = await client.post(
+                    "/chat/stream",
+                    data=json.dumps({"message": "hi"}),
+                    content_type="application/json",
+                    HTTP_CF_CONNECTING_IP="203.0.113.7",  # same real client every time
+                    HTTP_X_FORWARDED_FOR=f"10.0.0.{i}",  # rotating spoof — must not create new keys
+                )
+                statuses.append(response.status_code)
+                if response.status_code == 200:
+                    await _drain(response)
+        return statuses
+
+    assert asyncio.run(_run()) == [200, 200, 429]
+
+
 @pytest.mark.django_db(transaction=True)
 def test_message_that_is_too_long_is_rejected():
     async def _run():
@@ -866,3 +915,61 @@ def test_restore_returns_usage_so_the_gauge_survives_a_reload():
         "context_limit": 20000,
         "exhausted": False,
     }
+
+
+# --- Token usage / consumption --------------------------------------------
+
+
+def test_token_usage_registered_in_admin():
+    from chat.models import TokenUsage
+
+    assert TokenUsage in django_admin.site._registry
+
+
+@pytest.mark.django_db(transaction=True)
+def test_token_usage_records_summed_input_and_output_per_model():
+    """Consumption sums every model call's input+output for the turn — not the max the
+    gauge keeps. _UsageAgent makes two calls (120 and 450 input, 7 output each)."""
+
+    async def _run():
+        from chat.models import TokenUsage
+
+        with patch("chat.views.build_agents", return_value=(_UsageAgent(),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+        row = await TokenUsage.objects.aget(model="mistral/mistral-small-latest")
+        return row.input_tokens, row.output_tokens, row.total_tokens
+
+    assert asyncio.run(_run()) == (570, 14, 584)  # 120+450 in, 7+7 out
+
+
+@pytest.mark.django_db(transaction=True)
+def test_token_usage_accumulates_across_turns():
+    """The counter is cumulative: a second turn adds to the month's running total
+    rather than overwriting it (that's what makes it a consumption odometer)."""
+
+    async def _run():
+        from chat.models import TokenUsage
+
+        with patch("chat.views.build_agents", return_value=(_UsageAgent(),)):
+            client = AsyncClient()
+            first = await client.post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            conversation_id = _conversation_id_from(await _drain(first))
+            second = await client.post(
+                "/chat/stream",
+                data=json.dumps({"message": "again", "conversation_id": conversation_id}),
+                content_type="application/json",
+            )
+            await _drain(second)
+        row = await TokenUsage.objects.aget(model="mistral/mistral-small-latest")
+        return row.input_tokens, row.output_tokens
+
+    assert asyncio.run(_run()) == (1140, 28)  # two turns × (570 in, 14 out)

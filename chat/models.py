@@ -123,3 +123,38 @@ class LLMCredential(models.Model):
 
     def __str__(self):
         return f"{self.provider} ({self.label or 'key'})"
+
+
+class TokenUsage(models.Model):
+    """Cumulative token consumption per model per calendar month.
+
+    Summed from the usage each response reports (input + output), so it reflects real
+    cost: every turn resends the whole thread, so the same history is re-billed each
+    turn and consumption is the sum of every call — not the context size, which the
+    Conversation.context_tokens gauge tracks instead. This is the app's own tally;
+    Mistral's free tier exposes no usage API to our tier, so we count what we send and
+    receive. It only sees traffic through this service, so it approximates the real
+    figure (it won't match Mistral's console to the token)."""
+
+    model = models.CharField(
+        max_length=100, help_text='LiteLLM model id, e.g. "mistral/mistral-small-latest".'
+    )
+    period = models.DateField(help_text="First day of the calendar month this row totals.")
+    input_tokens = models.PositiveBigIntegerField(default=0)
+    output_tokens = models.PositiveBigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-period", "model"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model", "period"], name="unique_token_usage_model_period"
+            )
+        ]
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+    def __str__(self):
+        return f"{self.model} {self.period:%Y-%m}: {self.total_tokens:,} tokens"
