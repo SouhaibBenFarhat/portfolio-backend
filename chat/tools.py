@@ -13,6 +13,25 @@ from .models import Document, Fact, LLMCredential
 
 GITHUB_API = "https://api.github.com"
 
+# Human-readable labels for the tools, streamed to the UI beside the raw tool name so the
+# chat can show "reading the CV" instead of "get_cv". The raw name is still sent, so an
+# older client that maps names itself keeps working; a tool with no entry here falls back
+# to a generic label rather than leaking a function name.
+TOOL_LABELS = {
+    "get_facts": "loading facts",
+    "get_cv": "reading the CV",
+    "list_documents": "browsing documents",
+    "read_document": "reading a document",
+    "list_github_projects": "exploring projects",
+    "get_repo_readme": "reading the project",
+}
+
+
+def tool_label(name: str) -> str:
+    """The human-readable label for a tool name, or a generic fallback for an unmapped
+    tool (so a newly added tool still streams something sensible, not its function name)."""
+    return TOOL_LABELS.get(name, "working")
+
 
 async def _github_token() -> str:
     """The GitHub token. An admin-managed credential (provider="github") takes

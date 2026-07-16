@@ -27,6 +27,7 @@ from .agent import build_agents, context_limit
 from .guard import GUARD_BLOCK_MESSAGE, is_reply_safe
 from .models import Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import ConversationRestoreSerializer
+from .tools import tool_label
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
 CHAT_HISTORY_FETCH_LIMIT = 200
@@ -35,6 +36,12 @@ CHAT_HISTORY_FETCH_LIMIT = 200
 def _sse(payload: dict) -> str:
     """Format a dict as a Server-Sent Events `data:` frame."""
     return f"data: {json.dumps(payload)}\n\n"
+
+
+def _tool_frame(name: str, status: str) -> str:
+    """An SSE tool-step frame: the raw tool name, its human-readable label (for the
+    frontend's activity animations), and whether the step is starting or ending."""
+    return _sse({"tool": name, "label": tool_label(name), "status": status})
 
 
 _SENTENCE_BOUNDARY = re.compile(r"[.!?](?=\s)|\n")
@@ -361,9 +368,9 @@ async def chat_stream(request):
                             consumed[call_model][1] += call_output
                     elif kind == "on_tool_start":
                         tools_shown = emitted = True
-                        yield _sse({"tool": event["name"], "status": "start"})
+                        yield _tool_frame(event["name"], "start")
                     elif kind == "on_tool_end":
-                        yield _sse({"tool": event["name"], "status": "end"})
+                        yield _tool_frame(event["name"], "end")
                 # If the answer arrived only as a final message (no streamed tokens),
                 # route it through the guard too.
                 if not got_text and final_text:
