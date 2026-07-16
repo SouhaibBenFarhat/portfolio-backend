@@ -58,7 +58,10 @@ def index(request: Request) -> Response:
     summary="Liveness probe",
     description="Liveness probe used by the host's health check (Render) and uptime monitor.",
 )
-@api_view(["GET"])
+# Answer HEAD as well as GET: uptime monitors (UptimeRobot) probe with HEAD by default,
+# and a GET-only DRF view rejects HEAD with 405 — which the monitor reads as the service
+# being down even though it's healthy. Render's own check uses GET, so it was unaffected.
+@api_view(["GET", "HEAD"])
 def health(request: Request) -> Response:
     """Liveness probe used by the host's health check."""
     return Response({"status": "ok"})

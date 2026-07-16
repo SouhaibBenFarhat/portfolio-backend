@@ -8,6 +8,13 @@ def test_health_ok():
     assert response.json() == {"status": "ok"}
 
 
+def test_health_accepts_head_requests():
+    """Uptime monitors (UptimeRobot) default to HEAD; a GET-only view answers 405,
+    which reads as the service being down even though it's healthy."""
+    response = Client().head("/health")
+    assert response.status_code == 200
+
+
 def test_index_describes_service():
     response = Client().get("/")
     assert response.status_code == 200
