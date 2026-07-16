@@ -8,9 +8,12 @@ how much history is sent to the model.
 
 import json
 import uuid
+from collections import defaultdict
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import IntegrityError
+from django.db.models import F
 from django.http import JsonResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -20,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .agent import build_agents, context_limit
-from .models import Conversation, LLMCredential, Message, RequestLog
+from .models import Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import ConversationRestoreSerializer
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
@@ -115,7 +118,19 @@ def _text_of(content) -> str:
 
 
 def _client_ip(request) -> str:
-    """The caller's IP — the first X-Forwarded-For entry (Render sets it), else REMOTE_ADDR."""
+    """The caller's real IP, used as the per-IP rate-limit key.
+
+    Read Cloudflare's CF-Connecting-IP: Render fronts every service with Cloudflare,
+    which sets this header to the true client IP and overwrites whatever the client
+    sent — so it can't be forged. X-Forwarded-For is deliberately NOT trusted here:
+    Render only appends to it and never strips the client's, so its leftmost entry is
+    attacker-controlled — a spoofer could rotate it to mint unlimited rate-limit keys
+    and walk past the per-IP limit. Fall back to X-Forwarded-For then REMOTE_ADDR only
+    for local dev, where there's no Cloudflare in front and spoofing isn't a concern.
+    """
+    cloudflare_ip = request.headers.get("CF-Connecting-IP", "").strip()
+    if cloudflare_ip:
+        return cloudflare_ip
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if forwarded:
         return forwarded.split(",")[0].strip()
@@ -131,6 +146,32 @@ async def _is_rate_limited(ip: str) -> bool:
         return True
     await RequestLog.objects.acreate(ip=ip)
     return False
+
+
+async def _record_token_usage(model_id: str, input_tokens: int, output_tokens: int):
+    """Add this turn's token counts to the model's running total for the current month.
+
+    An atomic F() increment on the (model, month) row, created on the month's first hit.
+    The IntegrityError retry covers two first-writes racing to create the same row."""
+    period = timezone.now().date().replace(day=1)
+    updated = await TokenUsage.objects.filter(model=model_id, period=period).aupdate(
+        input_tokens=F("input_tokens") + input_tokens,
+        output_tokens=F("output_tokens") + output_tokens,
+    )
+    if updated:
+        return
+    try:
+        await TokenUsage.objects.acreate(
+            model=model_id,
+            period=period,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+    except IntegrityError:
+        await TokenUsage.objects.filter(model=model_id, period=period).aupdate(
+            input_tokens=F("input_tokens") + input_tokens,
+            output_tokens=F("output_tokens") + output_tokens,
+        )
 
 
 async def _get_or_create_conversation(conversation_id) -> Conversation:
@@ -209,6 +250,10 @@ async def chat_stream(request):
         reply_parts = []
         emitted = False  # whether any text/tool frame has been sent to the client
         error = None
+        # Tokens Mistral actually processed this turn, per model, summed across every
+        # model call and every failover attempt — each call is billed in full, so this
+        # is real consumption (unlike the gauge below, which keeps only the largest call).
+        consumed: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # model -> [in, out]
         prompt_tokens = 0  # set per attempt below; bound here in case `agents` is empty
         usage_model = settings.CHAT_MODEL
         # Per-turn failover: try each model in order. Only fall back to the next model
@@ -250,6 +295,16 @@ async def chat_stream(request):
                             usage_model = (event.get("metadata") or {}).get(
                                 "ls_model_name"
                             ) or usage_model
+                        # Consumption: sum every call's input+output (each is billed in
+                        # full), attributed to the model that actually ran this call.
+                        call_input = usage.get("input_tokens") or 0
+                        call_output = usage.get("output_tokens") or 0
+                        if call_input or call_output:
+                            call_model = (event.get("metadata") or {}).get(
+                                "ls_model_name"
+                            ) or settings.CHAT_MODEL
+                            consumed[call_model][0] += call_input
+                            consumed[call_model][1] += call_output
                     elif kind == "on_tool_start":
                         tools_shown = emitted = True
                         yield _sse({"tool": event["name"], "status": "start"})
@@ -283,6 +338,11 @@ async def chat_stream(request):
             await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply
             )
+
+        # Persist this turn's consumption (all attempts) so the admin can total tokens
+        # per model against the free-tier ceiling. Cumulative, unlike the gauge below.
+        for call_model, (in_tokens, out_tokens) in consumed.items():
+            await _record_token_usage(call_model, in_tokens, out_tokens)
 
         # Record how full the thread's context got, so the next turn can be refused once
         # it's spent and a reload can restore the gauge. Omitted when the provider

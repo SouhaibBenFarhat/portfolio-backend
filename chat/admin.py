@@ -4,10 +4,11 @@ Fact and Document are the editable knowledge base the assistant reads from.
 Conversations are shown read-only so you can review chats without editing them.
 """
 
+from django.conf import settings
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from .models import Conversation, Document, Fact, LLMCredential, Message
+from .models import Conversation, Document, Fact, LLMCredential, Message, TokenUsage
 
 
 @admin.register(LLMCredential)
@@ -57,3 +58,34 @@ class ConversationAdmin(ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(TokenUsage)
+class TokenUsageAdmin(ModelAdmin):
+    """Read-only view of token consumption per model per month, with the share of the
+    Mistral free-tier monthly ceiling used. Rows are written by the chat stream."""
+
+    list_display = (
+        "model",
+        "period",
+        "input_tokens",
+        "output_tokens",
+        "total_display",
+        "quota_used",
+    )
+    list_filter = ("model", "period")
+    readonly_fields = ("model", "period", "input_tokens", "output_tokens", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    @admin.display(description="total")
+    def total_display(self, obj):
+        return f"{obj.total_tokens:,}"
+
+    @admin.display(description="free quota used")
+    def quota_used(self, obj):
+        cap = settings.MISTRAL_FREE_TOKENS_PER_MONTH
+        if not cap:
+            return "—"
+        return f"{obj.total_tokens / cap * 100:.2f}%"

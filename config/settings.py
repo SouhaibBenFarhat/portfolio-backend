@@ -153,9 +153,16 @@ CHAT_MAX_HISTORY_MESSAGES = int(os.getenv("CHAT_MAX_HISTORY_MESSAGES", "100"))
 # (the client shows a full gauge and invites starting a new chat). Keep it below the
 # model's own context window — it's clamped to that anyway.
 CHAT_MAX_CONTEXT_TOKENS = int(os.getenv("CHAT_MAX_CONTEXT_TOKENS", "20000"))
-# Rate limit: at most CHAT_RATE_LIMIT requests per IP per CHAT_RATE_WINDOW_SECONDS.
-CHAT_RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "20"))
-CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "600"))
+# Rate limit: at most CHAT_RATE_LIMIT requests per IP per CHAT_RATE_WINDOW_SECONDS
+# (default 10 per minute). The per-IP key is the caller's real Cloudflare client IP —
+# see chat.views._client_ip for why X-Forwarded-For can't be trusted for this.
+CHAT_RATE_LIMIT = int(os.getenv("CHAT_RATE_LIMIT", "10"))
+CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "60"))
+
+# Mistral free-tier monthly token allowance (~1 billion; env-tunable). Used only to render
+# the "quota used" percentage in the admin: Mistral exposes no usage API to our tier, so the
+# app counts tokens itself (chat.views records them per model) and compares to this ceiling.
+MISTRAL_FREE_TOKENS_PER_MONTH = int(os.getenv("MISTRAL_FREE_TOKENS_PER_MONTH", "1000000000"))
 
 # --- Admin (Unfold theme) -------------------------------------------------
 UNFOLD = {
