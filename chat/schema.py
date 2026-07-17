@@ -40,6 +40,14 @@ _FRAME_SCHEMAS = {
         "required": ["conversation_id"],
         "properties": {"conversation_id": {"type": "string", "format": "uuid"}},
     },
+    "ChatModelFrame": {
+        "type": "object",
+        "description": "Names the model answering this turn — its LiteLLM id, e.g. "
+        '"mistral/mistral-small-latest". Sent once, before the reply; the client maps it '
+        "to a display name. Omitted when the provider doesn't report a model.",
+        "required": ["model"],
+        "properties": {"model": {"type": "string"}},
+    },
     "ChatTextFrame": {
         "type": "object",
         "description": "A chunk of the assistant's answer.",
@@ -117,9 +125,10 @@ _CHAT_STREAM_PATH = {
         "description": (
             "Runs the LangGraph agent and streams its reply as `text/event-stream`.\n\n"
             "The body is `data: <json>\\n\\n` frames: first a `ChatConversationIdFrame`, "
-            "then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, then a "
-            "`ChatUsageFrame`, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then "
-            "done). Guarded by a per-IP rate limit and a message-length cap."
+            "then a `ChatModelFrame` naming the answering model, then `ChatTextFrame` "
+            "tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, and "
+            "finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a "
+            "per-IP rate limit and a message-length cap."
         ),
         "requestBody": {
             "required": True,

@@ -149,6 +149,13 @@ def _text_of(content) -> str:
     return ""
 
 
+def _model_name(event) -> str:
+    """The model that produced a chat-model event, from LangChain's `ls_model_name`
+    metadata (the prefixed LiteLLM id, e.g. "mistral/mistral-small-latest"). "" when the
+    provider didn't report one."""
+    return (event.get("metadata") or {}).get("ls_model_name") or ""
+
+
 def _client_ip(request) -> str:
     """The caller's real IP, used as the per-IP rate-limit key.
 
@@ -317,6 +324,7 @@ async def chat_stream(request):
         yield _sse({"conversation_id": str(conversation.id)})
         reply_parts = []
         emitted = False  # whether any text/tool frame has been sent to the client
+        model_emitted = False  # whether the answering model has been named yet
         error = None
         # Tokens Mistral actually processed this turn, per model, summed across every
         # model call and every failover attempt — each call is billed in full, so this
@@ -336,12 +344,23 @@ async def chat_stream(request):
             # Reset per attempt so a failed or empty attempt's gauge numbers don't leak.
             prompt_tokens = 0
             usage_model = head_model
+            turn_model = ""  # the model on this attempt, named once it produces output
             try:
                 async for event in agent.astream_events({"messages": history}, version="v2"):
                     kind = event["event"]
+                    if kind.startswith("on_chat_model_"):
+                        # The prefixed id ("mistral/…") of the model on this attempt.
+                        # Failover may change it, so read it rather than assuming.
+                        turn_model = _model_name(event) or turn_model
                     if kind == "on_chat_model_stream":
                         token = _text_of(getattr(event["data"]["chunk"], "content", ""))
                         if token:
+                            # Name the answering model once, just before its first output.
+                            # Only a model that actually produces output is named, so a
+                            # failed or empty attempt is never announced as the replier.
+                            if turn_model and not model_emitted:
+                                model_emitted = True
+                                yield _sse({"model": turn_model})
                             reply_parts.append(token)
                             got_text = emitted = True
                             yield _sse({"text": token})
@@ -350,35 +369,40 @@ async def chat_stream(request):
                         content = _text_of(getattr(output, "content", ""))
                         if content:
                             final_text = content
+                        # Text streamed but the model id only arrived with this end event.
+                        if got_text and turn_model and not model_emitted:
+                            model_emitted = True
+                            yield _sse({"model": turn_model})
                         # A ReAct turn makes several model calls (decide a tool, then
                         # answer with its result). The largest prompt is the fullest the
                         # context got, which is what the client's gauge should show.
                         usage = getattr(output, "usage_metadata", None) or {}
                         if (usage.get("input_tokens") or 0) > prompt_tokens:
                             prompt_tokens = usage["input_tokens"]
-                            # ChatLiteLLM reports the prefixed id ("mistral/…"), which is
-                            # what context_limit() needs; failover may change which model
-                            # answered, so read it from the event rather than assuming.
-                            usage_model = (event.get("metadata") or {}).get(
-                                "ls_model_name"
-                            ) or usage_model
+                            usage_model = turn_model or usage_model
                         # Consumption: sum every call's input+output (each is billed in
                         # full), attributed to the model that actually ran this call.
                         call_input = usage.get("input_tokens") or 0
                         call_output = usage.get("output_tokens") or 0
                         if call_input or call_output:
-                            call_model = (event.get("metadata") or {}).get(
-                                "ls_model_name"
-                            ) or head_model
+                            call_model = turn_model or head_model
                             consumed[call_model][0] += call_input
                             consumed[call_model][1] += call_output
                     elif kind == "on_tool_start":
+                        # A tool step is the attempt's first visible output on a ReAct
+                        # turn; name the model here too (its id came on the end event above).
+                        if turn_model and not model_emitted:
+                            model_emitted = True
+                            yield _sse({"model": turn_model})
                         tools_shown = emitted = True
                         yield _tool_frame(event["name"], "start")
                     elif kind == "on_tool_end":
                         yield _tool_frame(event["name"], "end")
                 # The answer arrived as one final message rather than streamed tokens.
                 if not got_text and final_text:
+                    if turn_model and not model_emitted:
+                        model_emitted = True
+                        yield _sse({"model": turn_model})
                     reply_parts.append(final_text)
                     got_text = emitted = True
                     yield _sse({"text": final_text})
