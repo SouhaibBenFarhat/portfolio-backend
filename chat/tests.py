@@ -60,24 +60,28 @@ def _fake_model(reply: str):
     return GenericFakeChatModel(messages=iter([AIMessage(content=reply)]))
 
 
-def _model_stream_event(text: str) -> dict:
-    return {
+def _model_stream_event(text: str, model: str | None = None) -> dict:
+    event = {
         "event": "on_chat_model_stream",
         "name": "model",
         "data": {"chunk": SimpleNamespace(content=text)},
     }
+    if model:
+        event["metadata"] = {"ls_model_name": model}
+    return event
 
 
 class _RecordingAgent:
     """Stands in for the compiled agent: records its inputs, streams a reply."""
 
-    def __init__(self, reply: str = "ok"):
+    def __init__(self, reply: str = "ok", model: str | None = None):
         self.seen = []
         self._reply = reply
+        self._model = model
 
     async def astream_events(self, payload, version=None):
         self.seen.append(payload["messages"])
-        yield _model_stream_event(self._reply)
+        yield _model_stream_event(self._reply, self._model)
 
 
 class _ToolEventAgent:
@@ -895,6 +899,58 @@ def test_no_usage_frame_when_the_provider_reports_none():
     """No usage reported → no frame, so the client never renders a gauge from nothing."""
     body = _post_and_drain((_RecordingAgent(),))
     assert _usage_from(body) is None
+    assert '"done": true' in body
+
+
+# --- Streaming the answering model's name ----------------------------------
+
+
+def _model_from(body: str) -> str | None:
+    """The `model` id the stream named, or None if no model frame was sent."""
+    for frame in body.split("\n\n"):
+        line = frame.replace("data: ", "").strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "model" in data:
+            return data["model"]
+    return None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stream_names_the_answering_model_before_the_reply():
+    """The model handling the turn is named in a `model` frame, before its text, so the
+    client can show who's replying (it maps the id to a display name itself)."""
+    body = _post_and_drain((_RecordingAgent(reply="Hello", model="mistral/mistral-small-latest"),))
+    assert _model_from(body) == "mistral/mistral-small-latest"
+    assert body.index('"model"') < body.index('"text"')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_model_frame_names_the_model_that_replies_after_failover():
+    """On failover the named model is the one that answers, not the one that failed."""
+    fallback = _RecordingAgent(reply="from the fallback", model="mistral/open-mistral-nemo")
+    body = _post_and_drain((_FailingAgent(), fallback))
+    assert '"error"' not in body
+    assert _model_from(body) == "mistral/open-mistral-nemo"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_empty_attempt_is_not_named_only_the_reply_is():
+    """An empty first attempt is never named — only the model that produces the reply."""
+    agents = (
+        _EmptyAgent(),
+        _RecordingAgent(reply="from the retry", model="mistral/mistral-small-latest"),
+    )
+    assert _model_from(_post_and_drain(agents)) == "mistral/mistral-small-latest"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_model_frame_when_the_provider_reports_no_model():
+    """No model id reported → no frame, mirroring the usage frame's omission."""
+    body = _post_and_drain((_RecordingAgent(reply="hi"),))
+    assert _model_from(body) is None
+    assert '"text": "hi"' in body
     assert '"done": true' in body
 
 
