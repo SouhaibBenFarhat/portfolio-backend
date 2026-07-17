@@ -58,11 +58,13 @@ class Fact(models.Model):
     question = models.CharField(max_length=200, help_text="e.g. Salary expectations")
     answer = models.TextField()
     is_active = models.BooleanField(default=True, help_text="Uncheck to hide without deleting.")
-    order = models.IntegerField(default=0, help_text="Lower numbers show first.")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["order", "category", "question"]
+        # Grouped by category. get_facts hands the model every fact at once, so their
+        # sequence is a weak signal at best — there's nothing here worth hand-ranking,
+        # and category groups related answers together better than a number would.
+        ordering = ["category", "question"]
 
     def __str__(self):
         return f"{self.category}: {self.question}"
