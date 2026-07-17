@@ -221,39 +221,55 @@ million tokens, against Mistral Small's $0.06/$0.18) — on a public, unauthenti
 endpoint that's a deliberate choice, so it's a row you add yourself rather than one a
 migration hands you.
 
-## AI chat — safety & guardrails
+## AI chat — keeping it on topic, and cheap
 
-The chat assistant is a public, LLM-backed endpoint, so it's hardened against abuse and
-prompt injection in layers. Prompt injection is an unsolved problem, so the goal isn't a
-silver bullet — it's to shrink both the odds of a bad reply and its blast radius:
+The chat is a public endpoint spending a free tier that anyone on the internet can reach.
+The thing actually worth defending is the **token budget**: without a check, a visitor can
+use it as a general assistant — "teach me Python" — and burn the month on answers that have
+nothing to do with Souhaib.
 
-- **Least privilege.** The agent's tools are strictly **read-only** (facts, CV, public
-  GitHub) and expose nothing sensitive, so even a fully hijacked model can't take a
-  harmful action — the worst case is words on a screen.
-- **Output guardrail.** Every reply is reviewed by a second model call **before it
-  reaches the browser**. The stream is buffered into sentence-sized chunks; each chunk is
-  checked in context and only released if it passes, so nothing unvetted is ever shown
-  (see [`chat/guard.py`](./chat/guard.py) and `event_stream` in
-  [`chat/views.py`](./chat/views.py)). A vetoed answer is replaced with a professional
-  redirect. This keeps the streaming feel — text appears a chunk at a time — while
-  staying secure, entirely in the backend (no frontend change).
-- **Strict scope.** The guard enforces that replies stay professional and on-topic — only
-  Souhaib's CV, experience, skills, projects, and recruitment questions. Off-topic
-  answers, system-prompt leaks, and "ignore your instructions" role-changes are vetoed.
-- **Rate limiting.** Per real client IP (Cloudflare's `CF-Connecting-IP`, not the
-  spoofable `X-Forwarded-For`): 10 requests / 60s. Blocks one abuser without affecting
-  anyone else.
-- **Fail-open.** If the guard can't run (no key) or errors, it lets the reply through
-  rather than breaking the chat — a deliberate availability trade-off, tunable via
-  `CHAT_GUARD_ENABLED`.
+So the visitor's message is classified **before** the agent runs
+([`chat/guard.py`](./chat/guard.py)). Off topic gets a friendly redirect and never reaches
+the real model:
 
-Guard knobs (all env vars): `CHAT_GUARD_ENABLED` (default on), `CHAT_GUARD_MODEL`,
-`CHAT_GUARD_MAX_CHARS` (chunk size before a force-review).
+```
+message → cheap IN/OUT check → (IN) the agent, tools, full answer
+                             → (OUT) redirect, no model call
+```
 
-`CHAT_GUARD_MODEL` defaults to the `CHAT_MODEL` **env var**, deliberately — not to
-whatever sits at the head of the chain above. The guard is a one-word classifier, so it
-has no reason to be the expensive model, and pinning it means dragging a paid model to the
-top doesn't quietly double the bill by making every reply pay for a second call on it.
+**The direction is the whole point.** This used to review the *reply* instead, in buffered
+chunks, which had it backwards: the answer was already generated and paid for, and then a
+second model was paid again to read it. That's roughly double the tokens to catch the
+cheapest possible failure — an off-topic sentence. Checking the question costs a fraction
+and actually prevents the spend. It also fixed a real bug: the reviewer was never shown the
+visitor's message, so it judged `"Hello!"` in a vacuum, decided a greeting wasn't a
+professional answer about Souhaib, and blocked the assistant from saying hi.
+
+The check is shown the previous reply too, so a follow-up ("tell me more", "why?") reads as
+a continuation rather than a fragment about nothing. When genuinely torn it answers IN — a
+wrong refusal is rude to a real recruiter, which costs more than a wasted answer. For the
+same reason it **fails open**: no key or an error means the message goes through.
+
+The other layers:
+
+- **Least privilege.** The agent's tools are strictly **read-only** (facts, CV, uploaded
+  documents, public GitHub) and expose nothing sensitive. This — not any prompt — is the
+  real defence against prompt injection: a fully hijacked model can only produce words on a
+  screen. It has nothing to send, spend, or delete.
+- **Rate limiting.** Per real client IP (Cloudflare's `CF-Connecting-IP`, not the spoofable
+  `X-Forwarded-For`): 10 requests / 60s. Caps one abuser without touching anyone else.
+- **Context budget.** 20k tokens per conversation, then the thread is spent. Caps how
+  expensive any single conversation can get.
+- **System prompt.** Scope and persona live here, which is what it's for. The check is a
+  cost control on top, not a substitute.
+
+Knobs: `CHAT_GUARD_ENABLED` (default on — turn it off and everything is answered),
+`CHAT_GUARD_MODEL`.
+
+`CHAT_GUARD_MODEL` defaults to the `CHAT_MODEL` **env var**, deliberately — not to whatever
+sits at the head of the chain above. It's a one-word classifier, so it has no reason to run
+on the expensive model, and pinning it means dragging a paid model to the top doesn't
+quietly put every check on it too.
 
 ## Roadmap
 
