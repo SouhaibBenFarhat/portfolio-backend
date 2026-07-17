@@ -97,6 +97,16 @@ class _FailingAgent:
         yield  # unreachable; makes this an async generator
 
 
+class _StreamsThenFailsAgent:
+    """Streams a preamble token, then raises — mimics a model that writes "let me look
+    that up", calls a tool, and errors on the step after it, once text has already shown.
+    This is the case whose error used to be swallowed."""
+
+    async def astream_events(self, payload, version=None):
+        yield _model_stream_event("Let me look that up. ")
+        raise RuntimeError("provider rate limit hit mid-turn")
+
+
 class _FinalOnlyAgent:
     """Stand-in that emits a tool then a final message, but streams no tokens."""
 
@@ -614,8 +624,22 @@ def test_graceful_line_when_every_model_returns_empty():
     assert '"done": true' in body
 
 
+def _error_frame_from(body: str) -> dict | None:
+    """The payload of the stream's error frame, or None if there wasn't one."""
+    for frame in body.split("\n\n"):
+        line = frame.replace("data: ", "").strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "error" in data:
+            return data
+    return None
+
+
 @pytest.mark.django_db(transaction=True)
 def test_error_is_surfaced_when_all_models_fail():
+    from chat.views import CHAT_ERROR_MESSAGE
+
     async def _run():
         with patch("chat.views.build_agents", return_value=(_FailingAgent(), _FailingAgent())):
             response = await AsyncClient().post(
@@ -626,8 +650,58 @@ def test_error_is_surfaced_when_all_models_fail():
             return await _drain(response)
 
     body = asyncio.run(_run())
-    assert '"error"' in body
+    frame = _error_frame_from(body)
+    assert frame is not None
+    assert frame["error"] == CHAT_ERROR_MESSAGE  # the friendly line, safe to show anyone
+    assert "rate limit exceeded" in frame["detail"]  # the raw cause rides alongside it
     assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_error_after_a_preamble_is_surfaced_not_swallowed():
+    """The reported bug: a model streams "let me look that up", calls a tool, then the
+    next step fails — the client used to be left with a half-answer and no error. Now the
+    error frame is sent even though text already streamed."""
+    from chat.views import CHAT_ERROR_MESSAGE
+
+    async def _run():
+        with patch("chat.views.build_agents", return_value=(_StreamsThenFailsAgent(),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "who is souhaib?"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert "Let me look that up." in body  # the partial answer that did stream is kept
+    frame = _error_frame_from(body)
+    assert frame is not None  # ...and the failure is no longer swallowed
+    assert frame["error"] == CHAT_ERROR_MESSAGE
+    assert "provider rate limit hit mid-turn" in frame["detail"]  # real cause, for the owner
+    assert "rate limit" not in frame["error"]  # but never in the line shown to visitors
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_broken_turn_is_not_persisted_as_a_reply():
+    """A half-answer from a failed turn must not be saved — on reload it would read as a
+    complete reply that stops for no reason."""
+
+    async def _run():
+        from chat.models import Message
+
+        with patch("chat.views.build_agents", return_value=(_StreamsThenFailsAgent(),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "who is souhaib?"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+        return [m.role async for m in Message.objects.all()]
+
+    # The user's question is saved; the broken partial answer is not.
+    assert asyncio.run(_run()) == ["user"]
 
 
 # --- Admin-managed API keys -----------------------------------------------
