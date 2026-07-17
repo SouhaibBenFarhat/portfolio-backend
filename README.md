@@ -186,6 +186,41 @@ bonus, emails on downtime. One always-on service stays within Render's free
 > monitor is the reliable choice. The proper fix for zero cold starts is a paid
 > always-on plan (or a host whose free tier doesn't sleep, e.g. Koyeb).
 
+## AI chat — choosing the models
+
+Which model answers, and what it falls back to, is managed in the admin under **Chat
+models** — not in code. Drag the rows into the order you want and press **Save**: the top
+active row answers every turn, and the ones under it are tried in order if it fails. The
+chain is no longer limited to two, and a change takes effect on the next message (the
+agents are cached by the exact chain and key set, so reordering rebuilds them).
+
+The list shows what you need to decide with:
+
+| Column | What it tells you |
+| ------ | ----------------- |
+| Role | `primary` answers; `fallback 1`, `fallback 2`, … are tried in that order |
+| Key | `admin`, `env`, or **`missing`** — a model whose provider has no key would just be failed past, silently |
+| Context window | Read from LiteLLM. `unknown to LiteLLM` means the model is too new for its table — it still runs, the gauge just falls back to `CHAT_MAX_CONTEXT_TOKENS` unclamped |
+
+`CHAT_MODEL` / `CHAT_FALLBACK_MODEL` are now only the **fallback for an empty list** — a
+fresh deploy, or a wiped free-tier database. The chat answers either way.
+
+Model ids are validated on save by resolving the *provider prefix*, not the model name:
+LiteLLM's model table lags new releases (`zai/glm-5.2` routes correctly but isn't in it
+yet), so checking the name would reject models that work. A wrong name still fails, just
+at the provider rather than in the form.
+
+### Adding GLM
+
+`zai/glm-4.7-flash` ships seeded but switched off. It's free ($0 in and out), has a 200k
+window, and does real tool calling — so it can serve the agent's tools rather than only
+chat. To turn it on: get a key at [z.ai](https://z.ai) (no card), add it as an **API
+credential** with provider `zai` (or set `ZAI_API_KEY`), tick **Is active**, and drag it
+where you want it. `zai/glm-5.2` is the stronger model but is **paid** (~$1.40/$4.40 per
+million tokens, against Mistral Small's $0.06/$0.18) — on a public, unauthenticated
+endpoint that's a deliberate choice, so it's a row you add yourself rather than one a
+migration hands you.
+
 ## AI chat — safety & guardrails
 
 The chat assistant is a public, LLM-backed endpoint, so it's hardened against abuse and
@@ -212,8 +247,13 @@ silver bullet — it's to shrink both the odds of a bad reply and its blast radi
   rather than breaking the chat — a deliberate availability trade-off, tunable via
   `CHAT_GUARD_ENABLED`.
 
-Guard knobs (all env vars): `CHAT_GUARD_ENABLED` (default on), `CHAT_GUARD_MODEL`
-(defaults to the chat model), `CHAT_GUARD_MAX_CHARS` (chunk size before a force-review).
+Guard knobs (all env vars): `CHAT_GUARD_ENABLED` (default on), `CHAT_GUARD_MODEL`,
+`CHAT_GUARD_MAX_CHARS` (chunk size before a force-review).
+
+`CHAT_GUARD_MODEL` defaults to the `CHAT_MODEL` **env var**, deliberately — not to
+whatever sits at the head of the chain above. The guard is a one-word classifier, so it
+has no reason to be the expensive model, and pinning it means dragging a paid model to the
+top doesn't quietly double the bill by making every reply pay for a second call on it.
 
 ## Roadmap
 

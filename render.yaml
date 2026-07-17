@@ -37,15 +37,20 @@ services:
         fromDatabase:
           name: portfolio-db
           property: connectionString
-      - key: CHAT_MODEL # primary LiteLLM model; provider prefix picks the API key
+      # The failover chain is managed in the admin ("Chat models", drag to reorder).
+      # These two are only the fallback for an empty list — a fresh deploy, or a wiped
+      # free database — so the chat answers before anything is configured.
+      - key: CHAT_MODEL # head of the fallback chain; provider prefix picks the API key
         value: "mistral/mistral-small-latest"
-      - key: CHAT_FALLBACK_MODEL # used if the primary model fails (quota/rate limit)
+      - key: CHAT_FALLBACK_MODEL # tried if the model above fails (quota/rate limit)
         value: "mistral/open-mistral-nemo"
       - key: MISTRAL_API_KEY # secret — set the real value in the Render dashboard
         sync: false
       - key: GROQ_API_KEY # secret — set the real value in the Render dashboard
         sync: false
       - key: GEMINI_API_KEY # secret — set the real value in the Render dashboard
+        sync: false
+      - key: ZAI_API_KEY # secret — Z.ai, for the GLM models (glm-4.7-flash is free)
         sync: false
       - key: GITHUB_USERNAME
         value: "SouhaibBenFarhat"

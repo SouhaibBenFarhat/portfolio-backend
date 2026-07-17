@@ -1,17 +1,22 @@
 """Django admin registrations for the chat app.
 
-Fact and Document are the editable knowledge base the assistant reads from.
+ChatModel is the failover chain, reordered by dragging. Fact and Document are the
+editable knowledge base the assistant reads from.
 Documents can be uploaded as files (PDF/Word/text): the text is extracted into
 `content` for the agent, and the original bytes are kept for an in-admin preview.
 Conversations are shown read-only so you can review chats without editing them.
 """
 
+import os
 import re
 
+import litellm
 from django import forms
 from django.conf import settings
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
+from django.db.models import F, Window
+from django.db.models.functions import RowNumber
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path, reverse
@@ -21,8 +26,9 @@ from django.utils.http import content_disposition_header
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.widgets import UnfoldAdminFileFieldWidget, UnfoldBooleanWidget
 
+from .agent import context_limit
 from .extraction import MAX_UPLOAD_BYTES, content_type_for, extract_text
-from .models import Conversation, Document, Fact, LLMCredential, Message, TokenUsage
+from .models import ChatModel, Conversation, Document, Fact, LLMCredential, Message, TokenUsage
 
 # Control characters must never reach a stored filename: Django's multipart parser only
 # strips path separators, and a CR/LF smuggled into file_name would make every later
@@ -41,6 +47,88 @@ class LLMCredentialAdmin(ModelAdmin):
     def masked_key(self, obj):
         key = obj.api_key or ""
         return f"…{key[-4:]}" if len(key) >= 4 else "····"
+
+
+class ChatModelAdminForm(forms.ModelForm):
+    """Rejects a model id LiteLLM can't route, before it reaches the chain."""
+
+    class Meta:
+        model = ChatModel
+        fields = ["model_id", "order", "is_active"]
+
+    def clean_model_id(self):
+        model_id = (self.cleaned_data.get("model_id") or "").strip()
+        # Validate the *provider prefix*, not the model name. LiteLLM's model table lags
+        # new releases — zai/glm-5.2 routes correctly but get_model_info() raises "isn't
+        # mapped yet" — so validating the name would reject models that work. Resolving
+        # the prefix proves the provider is real while tolerating a name LiteLLM hasn't
+        # catalogued yet; a genuinely wrong name then fails at the provider, loudly.
+        try:
+            litellm.get_llm_provider(model_id)
+        except Exception as exc:  # noqa: BLE001 — any resolution failure means a bad id
+            raise forms.ValidationError(
+                f"LiteLLM cannot route '{model_id}'. Use a provider-prefixed id, such as "
+                '"mistral/mistral-small-latest" or "zai/glm-4.7-flash".'
+            ) from exc
+        return model_id
+
+
+@admin.register(ChatModel)
+class ChatModelAdmin(ModelAdmin):
+    """The chat's failover chain. Drag the rows into order and press Save: the top
+    active model answers every turn, and the ones under it are tried in order when it
+    fails. An empty list falls back to the CHAT_MODEL/CHAT_FALLBACK_MODEL env vars.
+    """
+
+    form = ChatModelAdminForm
+    # Unfold renders a drag handle per row and rewrites this field to the new positions
+    # on drop. The drag alone doesn't persist — it fills the form inputs, so the Save
+    # button below the list is what commits the new order.
+    ordering_field = "order"
+    list_display = ("model_id", "role", "key_source", "context_window", "is_active")
+    list_editable = ("is_active",)
+    list_filter = ("is_active",)
+    search_fields = ("model_id",)
+
+    def get_queryset(self, request):
+        # Rank each row among the *active* ones, so `role` can name its place in the
+        # chain without a query per row. Inactive rows rank within their own partition,
+        # which `role` ignores — they're off the chain entirely.
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(
+                chain_rank=Window(
+                    expression=RowNumber(),
+                    partition_by=[F("is_active")],
+                    order_by=[F("order").asc(), F("id").asc()],
+                )
+            )
+        )
+
+    @admin.display(description="role")
+    def role(self, obj):
+        if not obj.is_active:
+            return "—"
+        return "primary" if obj.chain_rank == 1 else f"fallback {obj.chain_rank - 1}"
+
+    @admin.display(description="key")
+    def key_source(self, obj):
+        # Adding a model whose provider has no key configured is the expected first
+        # mistake (GLM with no ZAI_API_KEY). The chain would just fail past it, which
+        # looks like the model being bad rather than unconfigured — so name it here.
+        if LLMCredential.objects.filter(provider=obj.provider, is_active=True).exists():
+            return "admin"
+        if os.getenv(f"{obj.provider.upper()}_API_KEY"):
+            return "env"
+        return "missing"
+
+    @admin.display(description="context window")
+    def context_window(self, obj):
+        # 0 means LiteLLM hasn't catalogued this model yet (a very new one). It still
+        # runs — the context gauge just falls back to CHAT_MAX_CONTEXT_TOKENS unclamped.
+        window = context_limit(obj.model_id)
+        return f"{window:,}" if window else "unknown to LiteLLM"
 
 
 @admin.register(Fact)

@@ -1,12 +1,15 @@
 """The chat agent, built with LangGraph.
 
 A LangGraph agent (system persona + tools) runs the chat. The model is routed
-through LiteLLM, so the provider and API key are swappable. API keys come from the
+through LiteLLM, so the provider and API key are swappable. Which models run, and in
+what failover order, comes from the admin-managed ChatModel rows (falling back to the
+CHAT_MODEL/CHAT_FALLBACK_MODEL env vars when there are none); API keys come from the
 admin-managed LLMCredential rows (multiple per provider, tried in order), falling
-back to env vars. Agents are cached by the set of keys in use, so rotating a key
-in the admin rebuilds them on the next request.
+back to env vars. Agents are cached by the exact plan of (model, key) pairs in use, so
+reordering the chain or rotating a key in the admin rebuilds them on the next request.
 """
 
+from collections.abc import Sequence
 from functools import lru_cache
 
 import litellm
@@ -90,17 +93,36 @@ def context_limit(model_id: str) -> int:
         return 0
 
 
-def build_agents(provider_keys: dict) -> tuple:
+def resolve_chain(model_ids: Sequence[str] = ()) -> list[str]:
+    """The models to try this turn, in failover order.
+
+    `model_ids` is the admin's ordered chain (see ChatModel). An empty chain falls back
+    to the env-var pair: Render's free Postgres can be wiped and a fresh deploy starts
+    with no rows, neither of which may take the chat down.
+    """
+    chain = [model_id for model_id in model_ids if model_id]
+    return chain or [m for m in (settings.CHAT_MODEL, settings.CHAT_FALLBACK_MODEL) if m]
+
+
+def primary_model(model_ids: Sequence[str] = ()) -> str:
+    """The model that actually answers — the head of the chain. It's what the context
+    gauge measures against, since that's whose window and reply the visitor sees."""
+    chain = resolve_chain(model_ids)
+    return chain[0] if chain else settings.CHAT_MODEL
+
+
+def build_agents(provider_keys: dict, model_ids: Sequence[str] = ()) -> tuple:
     """One agent per (model, key), in failover order.
 
     `provider_keys` maps a provider to its active keys, e.g. {"groq": ["k1", "k2"]}.
-    A provider with no key uses its env var. Result is cached by the exact keys in
-    use, so a change in the admin rebuilds on the next request.
+    `model_ids` is the admin's ordered chain; empty falls back to the env vars. A
+    provider with no key uses its env var. Result is cached by the exact plan in use,
+    so rotating a key *or* dragging the chain into a new order in the admin rebuilds
+    on the next request.
     """
-    model_ids = [m for m in (settings.CHAT_MODEL, settings.CHAT_FALLBACK_MODEL) if m]
     plan = [
         (model_id, key)
-        for model_id in model_ids
+        for model_id in resolve_chain(model_ids)
         for key in (provider_keys.get(_provider_of(model_id)) or [None])
     ]
     signature = tuple(plan)

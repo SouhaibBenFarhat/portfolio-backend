@@ -98,6 +98,51 @@ class Document(models.Model):
         return self.title
 
 
+class ChatModel(models.Model):
+    """A model the chat can use, and its place in the failover chain.
+
+    The rows are dragged into order in the admin: the first active one answers every
+    turn, and the ones below it are tried in order when it fails. Keeping the chain in
+    the database means it can be reordered, extended past two models, or have one
+    disabled with no redeploy — the same reasoning as LLMCredential, which holds the
+    keys these models authenticate with.
+
+    An empty table falls back to the CHAT_MODEL/CHAT_FALLBACK_MODEL env vars (see
+    chat.agent.resolve_chain): Render's free Postgres can be wiped, and an unconfigured
+    table must never take the chat down.
+    """
+
+    model_id = models.CharField(
+        max_length=100,
+        unique=True,
+        help_text="LiteLLM model id, including its provider prefix — e.g. "
+        '"mistral/mistral-small-latest" or "zai/glm-4.7-flash". The prefix selects '
+        "which API credential is used.",
+    )
+    order = models.PositiveIntegerField(
+        default=0, help_text="Drag the rows to reorder, then press Save. Lowest runs first."
+    )
+    is_active = models.BooleanField(
+        default=True, help_text="Uncheck to take a model out of the chain without deleting it."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+        verbose_name = "chat model"
+        verbose_name_plural = "chat models"
+
+    def __str__(self):
+        return self.model_id
+
+    @property
+    def provider(self) -> str:
+        """The LiteLLM provider prefix, which is also the LLMCredential.provider that
+        supplies this model's key."""
+        return self.model_id.split("/", 1)[0]
+
+
 class RequestLog(models.Model):
     """One row per chat request, used for per-IP rate limiting. Rows older than the
     rate-limit window are pruned on each request, so the table stays small."""

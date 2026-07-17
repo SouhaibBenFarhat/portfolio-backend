@@ -1520,3 +1520,223 @@ def test_extract_rejects_corrupt_bytes():
 
     with pytest.raises(ValueError, match="Could not read"):
         extract_text(b"not a real pdf at all", "cv.pdf")
+
+
+# --- The failover chain, ordered in the admin -------------------------------
+
+
+def test_chain_falls_back_to_the_env_vars_when_no_models_are_configured():
+    """A wiped free-tier database, or a fresh deploy, must not take the chat down."""
+    from chat.agent import resolve_chain
+
+    with override_settings(
+        CHAT_MODEL="mistral/mistral-small-latest",
+        CHAT_FALLBACK_MODEL="mistral/open-mistral-nemo",
+    ):
+        assert resolve_chain([]) == [
+            "mistral/mistral-small-latest",
+            "mistral/open-mistral-nemo",
+        ]
+        assert resolve_chain(["zai/glm-5.2"]) == ["zai/glm-5.2"]  # a configured chain wins
+
+
+def test_primary_model_is_the_head_of_the_chain():
+    from chat.agent import primary_model
+
+    assert primary_model(["zai/glm-5.2", "mistral/mistral-small-latest"]) == "zai/glm-5.2"
+    with override_settings(CHAT_MODEL="mistral/mistral-small-latest"):
+        assert primary_model([]) == "mistral/mistral-small-latest"
+
+
+def test_build_agents_follows_the_chain_order():
+    """The chain's order is the failover order, and each key multiplies its model."""
+    from chat.agent import build_agents
+
+    agents = build_agents(
+        {"mistral": ["k1", "k2"]}, ["zai/glm-4.7-flash", "mistral/open-mistral-nemo"]
+    )
+    # GLM has no key (one agent, env-var key); Nemo has two admin keys → two agents.
+    assert len(agents) == 3
+
+
+def test_reordering_the_chain_rebuilds_the_agents():
+    """Dragging a row must take effect on the next request — the cache keys off the plan,
+    so a new order is a new plan, not a stale hit."""
+    from chat.agent import build_agents
+
+    first = build_agents({}, ["mistral/mistral-small-latest", "zai/glm-4.7-flash"])
+    same = build_agents({}, ["mistral/mistral-small-latest", "zai/glm-4.7-flash"])
+    swapped = build_agents({}, ["zai/glm-4.7-flash", "mistral/mistral-small-latest"])
+    assert first is same  # unchanged chain → cached
+    assert swapped is not first  # reordered chain → rebuilt
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stream_runs_the_chain_in_the_admins_order():
+    """The order dragged in the admin is the order the stream tries models in."""
+    seen = []
+
+    def _spy(provider_keys, model_ids=()):
+        seen.append(list(model_ids))
+        return (_RecordingAgent(),)
+
+    async def _run():
+        from chat.models import ChatModel
+
+        await ChatModel.objects.all().adelete()
+        await ChatModel.objects.acreate(model_id="zai/glm-4.7-flash", order=0)
+        await ChatModel.objects.acreate(model_id="mistral/mistral-small-latest", order=1)
+        with patch("chat.views.build_agents", side_effect=_spy):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+        return seen
+
+    assert asyncio.run(_run())[0] == ["zai/glm-4.7-flash", "mistral/mistral-small-latest"]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_inactive_models_are_left_out_of_the_chain():
+    seen = []
+
+    def _spy(provider_keys, model_ids=()):
+        seen.append(list(model_ids))
+        return (_RecordingAgent(),)
+
+    async def _run():
+        from chat.models import ChatModel
+
+        await ChatModel.objects.all().adelete()
+        await ChatModel.objects.acreate(model_id="mistral/mistral-small-latest", order=0)
+        await ChatModel.objects.acreate(model_id="zai/glm-5.2", order=1, is_active=False)
+        with patch("chat.views.build_agents", side_effect=_spy):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+        return seen
+
+    assert asyncio.run(_run())[0] == ["mistral/mistral-small-latest"]
+
+
+@pytest.mark.django_db
+def test_restore_gauge_measures_against_the_chain_head_not_the_env_var():
+    """Drag a model with a different window to the top and the gauge follows it. Uses a
+    cap above both windows, so the clamp — and therefore which model it read — shows."""
+    from chat.models import ChatModel, Conversation
+
+    ChatModel.objects.all().delete()
+    ChatModel.objects.create(model_id="zai/glm-4.7-flash", order=0)  # 200k window
+    conversation = Conversation.objects.create(context_tokens=100)
+
+    with override_settings(
+        CHAT_MAX_CONTEXT_TOKENS=999_999, CHAT_MODEL="mistral/mistral-small-latest"
+    ):
+        from django.test import Client
+
+        data = Client().get(f"/chat/conversations/{conversation.id}/").json()
+
+    # GLM's 200k, not mistral-small-latest's 131k: the env var is no longer the head.
+    assert data["usage"]["context_limit"] == 200_000
+
+
+# --- The chain's admin ------------------------------------------------------
+
+
+def test_chat_model_registered_in_admin():
+    from chat.models import ChatModel
+
+    assert ChatModel in django_admin.site._registry
+
+
+@pytest.mark.django_db  # the form's unique check on model_id queries the table
+def test_chat_model_form_rejects_an_id_litellm_cannot_route():
+    from chat.admin import ChatModelAdminForm
+
+    form = ChatModelAdminForm(
+        data={"model_id": "not-a-provider/whatever", "order": 0, "is_active": "on"}
+    )
+    assert not form.is_valid()
+    assert "cannot route" in str(form.errors["model_id"])
+
+
+@pytest.mark.django_db
+def test_chat_model_form_accepts_a_model_litellm_has_not_catalogued():
+    """zai/glm-5.2 routes correctly but isn't in LiteLLM's model table yet. Validating
+    the model *name* would reject it; validating the provider prefix doesn't."""
+    from chat.admin import ChatModelAdminForm
+
+    form = ChatModelAdminForm(data={"model_id": "zai/glm-5.2", "order": 0, "is_active": "on"})
+    assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+def test_chat_model_changelist_is_drag_orderable(client):
+    """The feature itself: rows carry drag handles and the field Unfold rewrites on drop."""
+    from django.contrib.auth.models import User
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    page = client.get("/admin/chat/chatmodel/")
+
+    assert page.status_code == 200
+    html = page.content.decode()
+    assert 'data-ordering-field="order"' in html
+    assert "drag_indicator" in html
+    assert 'name="form-0-order"' in html  # the input the drag rewrites, saved by Save
+
+
+@pytest.mark.django_db
+def test_admin_names_each_models_place_in_the_chain(client):
+    """The list says which model is live and which are backups — position alone is
+    ambiguous once an inactive row sits between them."""
+    from django.contrib.auth.models import User
+
+    from chat.models import ChatModel
+
+    ChatModel.objects.all().delete()
+    ChatModel.objects.create(model_id="mistral/mistral-small-latest", order=0)
+    ChatModel.objects.create(model_id="zai/glm-5.2", order=1, is_active=False)
+    ChatModel.objects.create(model_id="mistral/open-mistral-nemo", order=2)
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    html = client.get("/admin/chat/chatmodel/").content.decode()
+
+    assert "primary" in html
+    assert "fallback 1" in html  # Nemo, despite the inactive row sitting above it
+
+
+@pytest.mark.django_db
+def test_admin_reports_a_model_whose_provider_has_no_key(client):
+    """Adding GLM with no ZAI_API_KEY is the expected first mistake: the chain would
+    quietly fail past it, so the list has to say the key is missing."""
+    from django.contrib.auth.models import User
+
+    from chat.models import ChatModel, LLMCredential
+
+    ChatModel.objects.all().delete()
+    ChatModel.objects.create(model_id="zai/glm-4.7-flash", order=0)
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+
+    with patch.dict("os.environ", {}, clear=True):
+        assert "missing" in client.get("/admin/chat/chatmodel/").content.decode()
+
+    LLMCredential.objects.create(provider="zai", api_key="zai-key")
+    assert "admin" in client.get("/admin/chat/chatmodel/").content.decode()
+
+
+@pytest.mark.django_db
+def test_seeded_chain_matches_the_env_vars_it_replaced(client):
+    """The seed migration preserves the previous behaviour exactly, so deploying this
+    doesn't silently change which model answers."""
+    from chat.agent import resolve_chain
+    from chat.models import ChatModel
+
+    active = list(ChatModel.objects.filter(is_active=True).values_list("model_id", flat=True))
+    assert active == resolve_chain([])  # identical to the env-var chain
+    # GLM is seeded but off — it needs a key before it can answer.
+    assert ChatModel.objects.filter(model_id="zai/glm-4.7-flash", is_active=False).exists()

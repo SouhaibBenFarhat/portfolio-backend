@@ -23,14 +23,30 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .agent import build_agents, context_limit
+from .agent import build_agents, context_limit, primary_model
 from .guard import GUARD_BLOCK_MESSAGE, is_reply_safe
-from .models import Conversation, LLMCredential, Message, RequestLog, TokenUsage
+from .models import ChatModel, Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import ConversationRestoreSerializer
 from .tools import tool_label
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
 CHAT_HISTORY_FETCH_LIMIT = 200
+
+
+def _chain_model_ids() -> list[str]:
+    """The admin's failover chain, in order (see ChatModel). Sync, for the DRF views."""
+    return list(ChatModel.objects.filter(is_active=True).values_list("model_id", flat=True))
+
+
+async def _achain_model_ids() -> list[str]:
+    """The admin's failover chain, in order (see ChatModel). Async, for the stream —
+    the sync ORM would raise SynchronousOnlyOperation on this path."""
+    return [
+        model_id
+        async for model_id in ChatModel.objects.filter(is_active=True).values_list(
+            "model_id", flat=True
+        )
+    ]
 
 
 def _sse(payload: dict) -> str:
@@ -109,7 +125,9 @@ class ConversationDetailView(APIView):
             {
                 "id": conversation.id,
                 "messages": recent,
-                "usage": _usage_payload(conversation.context_tokens, settings.CHAT_MODEL),
+                "usage": _usage_payload(
+                    conversation.context_tokens, primary_model(_chain_model_ids())
+                ),
             }
         ).data
         return Response(data)
@@ -242,13 +260,18 @@ async def chat_stream(request):
 
     conversation = await _get_or_create_conversation(payload.get("conversation_id"))
 
+    # The admin's ordered chain: its head answers, the rest are the failover order. Read
+    # before the budget gate, which measures the thread against the head's context window.
+    model_ids = await _achain_model_ids()
+    head_model = primary_model(model_ids)
+
     # This thread has read its budget's worth of context; every further turn would resend
     # all of it. Stop here instead, and let the visitor start a fresh conversation.
-    if conversation.context_tokens >= _token_budget(settings.CHAT_MODEL):
+    if conversation.context_tokens >= _token_budget(head_model):
         return JsonResponse(
             {
                 "error": "this conversation has reached its context limit, start a new chat",
-                "usage": _usage_payload(conversation.context_tokens, settings.CHAT_MODEL),
+                "usage": _usage_payload(conversation.context_tokens, head_model),
             },
             status=403,
         )
@@ -269,7 +292,7 @@ async def chat_stream(request):
     provider_keys: dict[str, list[str]] = {}
     async for cred in LLMCredential.objects.filter(is_active=True):
         provider_keys.setdefault(cred.provider, []).append(cred.api_key)
-    agents = build_agents(provider_keys)
+    agents = build_agents(provider_keys, model_ids)
 
     async def event_stream():
         yield _sse({"conversation_id": str(conversation.id)})
@@ -286,7 +309,7 @@ async def chat_stream(request):
         # is real consumption (unlike the gauge below, which keeps only the largest call).
         consumed: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # model -> [in, out]
         prompt_tokens = 0  # set per attempt below; bound here in case `agents` is empty
-        usage_model = settings.CHAT_MODEL
+        usage_model = head_model
 
         async def _approved(text: str) -> bool:
             """The guard's verdict on the reply so far (True = release), or True when the
@@ -326,7 +349,7 @@ async def chat_stream(request):
             tools_shown = False
             # Reset per attempt so a failed or empty attempt's gauge numbers don't leak.
             prompt_tokens = 0
-            usage_model = settings.CHAT_MODEL
+            usage_model = head_model
             try:
                 async for event in agent.astream_events({"messages": history}, version="v2"):
                     kind = event["event"]
@@ -363,7 +386,7 @@ async def chat_stream(request):
                         if call_input or call_output:
                             call_model = (event.get("metadata") or {}).get(
                                 "ls_model_name"
-                            ) or settings.CHAT_MODEL
+                            ) or head_model
                             consumed[call_model][0] += call_input
                             consumed[call_model][1] += call_output
                     elif kind == "on_tool_start":
