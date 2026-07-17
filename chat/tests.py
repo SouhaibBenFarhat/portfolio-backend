@@ -1691,6 +1691,32 @@ def test_chat_model_changelist_is_drag_orderable(client):
 
 
 @pytest.mark.django_db
+def test_drag_ordered_list_keeps_its_order_input_but_hides_the_column(client):
+    """The order number is hidden by CSS, not removed: the drag rewrites that input and
+    Save commits it, so the field has to stay in the DOM and in the submitted form."""
+    from django.contrib.auth.models import User
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    html = client.get("/admin/chat/chatmodel/").content.decode()
+
+    assert 'name="form-0-order"' in html  # still submitted — hiding it must not break Save
+    assert 'data-ordering-field="order"' in html  # what the CSS rule keys off
+
+
+@pytest.mark.django_db
+def test_facts_are_grouped_by_category(client):
+    """Facts have no hand-ranked order any more: get_facts hands the model all of them
+    at once, so grouping related answers together is the only ordering worth having."""
+    from chat.models import Fact
+
+    Fact.objects.create(category="Personal", question="Hobbies", answer="Chess")
+    Fact.objects.create(category="Compensation", question="Salary", answer="Competitive")
+    Fact.objects.create(category="Personal", question="Location", answer="Munich")
+
+    assert [f.question for f in Fact.objects.all()] == ["Salary", "Hobbies", "Location"]
+
+
+@pytest.mark.django_db
 def test_admin_names_each_models_place_in_the_chain(client):
     """The list says which model is live and which are backups — position alone is
     ambiguous once an inactive row sits between them."""

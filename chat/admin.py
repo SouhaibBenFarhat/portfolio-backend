@@ -133,8 +133,8 @@ class ChatModelAdmin(ModelAdmin):
 
 @admin.register(Fact)
 class FactAdmin(ModelAdmin):
-    list_display = ("question", "category", "is_active", "order", "updated_at")
-    list_editable = ("is_active", "order")
+    list_display = ("question", "category", "is_active", "updated_at")
+    list_editable = ("is_active",)
     list_filter = ("category", "is_active")
     search_fields = ("question", "answer", "category")
 

@@ -140,3 +140,22 @@ body,
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-focus) 18%, transparent) !important;
   outline: none !important;
 }
+
+/* --- Drag-ordered lists: hide the raw position number --------------------- */
+/* A drag-ordered changelist (ChatModel) shows both a drag handle and the order
+ * integer, which say the same thing twice — and the number is the less useful
+ * of the two, since a computed "role" column already spells out what a position
+ * means. Unfold can't help here: it forces ordering_field into list_editable and
+ * list_display (the drag rewrites those inputs, and Save is what commits them),
+ * and its hide_ordering_field option is only honoured by inline templates, not
+ * the changelist. So hide the column visually and leave the input in the DOM —
+ * display:none still submits, and the drag-then-Save path keeps working.
+ *
+ * Scoped to tables that are actually draggable rather than to every column named
+ * "order": the attribute is only emitted when ordering_field is set, so a list
+ * whose order is typed by hand would keep showing its number. Nothing else has
+ * one today, but the rule shouldn't reach across the admin on a name collision. */
+#result_list[data-ordering-field="order"] th.column-order,
+#result_list[data-ordering-field="order"] td.field-order {
+  display: none !important;
+}
