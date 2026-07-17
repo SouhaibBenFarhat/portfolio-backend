@@ -32,6 +32,11 @@ from .tools import tool_label
 # Cap the restore payload so a very long thread can't return an unbounded response.
 CHAT_HISTORY_FETCH_LIMIT = 200
 
+# Shown to the visitor when a turn fails — calm and generic, never the raw exception.
+# The technical cause rides alongside it in the frame's `detail` field, for the owner to
+# read; the frontend shows this line to everyone and `detail` only in internal/owner mode.
+CHAT_ERROR_MESSAGE = "Sorry, something went wrong on my end. Please try again in a moment."
+
 
 def _chain_model_ids() -> list[str]:
     """The admin's failover chain, in order (see ChatModel). Sync, for the DRF views."""
@@ -386,18 +391,25 @@ async def chat_stream(request):
                     break  # already streamed part of an answer — don't switch models
 
         reply = "".join(reply_parts)
-        if not reply:
-            if error is not None:
-                yield _sse({"error": str(error)})
-            else:
-                # Every retry came back empty (rare) — a graceful line so it's never blank.
-                reply = (
-                    "Sorry, I couldn't find an answer to that. You can ask about "
-                    "Souhaib's projects, experience, skills, or availability."
-                )
-                yield _sse({"text": reply})
+        if error is not None:
+            # The turn broke. Surface it even if a preamble had already streamed —
+            # otherwise the answer just stops dead with no explanation (the exact bug
+            # where "Let me look that up…" streams, the post-tool call fails, and the
+            # client is left hanging). Two fields: a friendly line safe to show anyone,
+            # and the raw cause for the owner to diagnose from.
+            yield _sse({"error": CHAT_ERROR_MESSAGE, "detail": str(error)})
+        elif not reply:
+            # Every retry came back empty (rare) — a graceful line so it's never blank.
+            reply = (
+                "Sorry, I couldn't find an answer to that. You can ask about "
+                "Souhaib's projects, experience, skills, or availability."
+            )
+            yield _sse({"text": reply})
 
-        if reply:
+        # Don't persist a half-answer from a broken turn — on reload it would read as a
+        # complete reply that inexplicably stops. The user message is already saved, so
+        # the visitor can just re-ask.
+        if reply and error is None:
             await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply
             )
