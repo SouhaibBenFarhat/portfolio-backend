@@ -2,12 +2,12 @@
 
 A LangGraph agent streams its reply token-by-token over Server-Sent Events, with
 conversation history persisted so the assistant remembers context. The public
-endpoint is guarded by a per-IP rate limit, a message-length cap, and a bound on
-how much history is sent to the model.
+endpoint is guarded by a per-IP rate limit, a message-length cap, a bound on how much
+history is sent to the model, a per-thread context budget, and a scope check that
+refuses off-topic questions before the expensive model runs (see chat/guard.py).
 """
 
 import json
-import re
 import uuid
 from collections import defaultdict
 from datetime import timedelta
@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .agent import build_agents, context_limit, primary_model
-from .guard import GUARD_BLOCK_MESSAGE, is_reply_safe
+from .guard import GUARD_BLOCK_MESSAGE, is_message_in_scope
 from .models import ChatModel, Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import ConversationRestoreSerializer
 from .tools import tool_label
@@ -58,23 +58,6 @@ def _tool_frame(name: str, status: str) -> str:
     """An SSE tool-step frame: the raw tool name, its human-readable label (for the
     frontend's activity animations), and whether the step is starting or ending."""
     return _sse({"tool": name, "label": tool_label(name), "status": status})
-
-
-_SENTENCE_BOUNDARY = re.compile(r"[.!?](?=\s)|\n")
-
-
-def _next_chunk_len(text: str, max_chars: int) -> int:
-    """How many leading characters of `text` are ready to release as a guard-checked
-    chunk: through the last completed sentence (punctuation then whitespace), or a hard
-    cut at `max_chars` once the buffer is that long. 0 means "wait for more"."""
-    boundary = None
-    for match in _SENTENCE_BOUNDARY.finditer(text):
-        boundary = match
-    if boundary:
-        return boundary.end()
-    if len(text) >= max_chars:
-        return max_chars
-    return 0
 
 
 def _token_budget(model_id: str) -> int:
@@ -292,52 +275,50 @@ async def chat_stream(request):
     provider_keys: dict[str, list[str]] = {}
     async for cred in LLMCredential.objects.filter(is_active=True):
         provider_keys.setdefault(cred.provider, []).append(cred.api_key)
+
+    # Is this a question we should answer at all? Asked before the agent is built, so an
+    # off-topic message costs one short classification instead of a full generated answer
+    # (plus its tools, plus the whole thread resent as input). That saving is the entire
+    # reason the check exists, and it only exists at this end of the turn.
+    in_scope = True
+    if settings.CHAT_GUARD_ENABLED:
+        guard_provider = settings.CHAT_GUARD_MODEL.split("/", 1)[0]
+        guard_key = (provider_keys.get(guard_provider) or [None])[0]
+        previous = [m["content"] for m in history[:-1] if m["role"] == Message.Role.ASSISTANT]
+        in_scope = await is_message_in_scope(
+            message, previous_reply=previous[-1] if previous else "", api_key=guard_key
+        )
+
+    if not in_scope:
+        # Streamed like any other reply, so the widget renders it as a normal message and
+        # the thread stays coherent on reload. No model call was made to produce it.
+        await Message.objects.acreate(
+            conversation=conversation, role=Message.Role.ASSISTANT, content=GUARD_BLOCK_MESSAGE
+        )
+
+        async def refusal_stream():
+            yield _sse({"conversation_id": str(conversation.id)})
+            yield _sse({"text": GUARD_BLOCK_MESSAGE})
+            yield _sse({"done": True})
+
+        response = StreamingHttpResponse(refusal_stream(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache"
+        response["X-Accel-Buffering"] = "no"
+        return response
+
     agents = build_agents(provider_keys, model_ids)
 
     async def event_stream():
         yield _sse({"conversation_id": str(conversation.id)})
-        released = ""  # answer text approved by the guard and already sent to the client
-        pending = ""  # answer tokens accumulated, not yet reviewed or sent
-        blocked = False  # the guard vetoed the answer → stop and show a redirect
+        reply_parts = []
         emitted = False  # whether any text/tool frame has been sent to the client
         error = None
-        # Guard key: an admin key for the guard model's provider, else its env var.
-        guard_provider = settings.CHAT_GUARD_MODEL.split("/", 1)[0]
-        guard_key = (provider_keys.get(guard_provider) or [None])[0]
         # Tokens Mistral actually processed this turn, per model, summed across every
         # model call and every failover attempt — each call is billed in full, so this
         # is real consumption (unlike the gauge below, which keeps only the largest call).
         consumed: dict[str, list[int]] = defaultdict(lambda: [0, 0])  # model -> [in, out]
         prompt_tokens = 0  # set per attempt below; bound here in case `agents` is empty
         usage_model = head_model
-
-        async def _approved(text: str) -> bool:
-            """The guard's verdict on the reply so far (True = release), or True when the
-            guard is disabled."""
-            if not settings.CHAT_GUARD_ENABLED:
-                return True
-            return await is_reply_safe(text, guard_key)
-
-        async def _flush(force: bool = False):
-            """Release guard-approved chunks of `pending` as text frames. On a veto, set
-            `blocked` and stop — the rejected text is discarded, never sent."""
-            nonlocal released, pending, blocked, emitted
-            while pending and not blocked:
-                cut = (
-                    len(pending)
-                    if force
-                    else _next_chunk_len(pending, settings.CHAT_GUARD_MAX_CHARS)
-                )
-                if cut == 0:
-                    return
-                chunk = pending[:cut]
-                if await _approved(released + chunk):
-                    released += chunk
-                    pending = pending[cut:]
-                    emitted = True
-                    yield _sse({"text": chunk})
-                else:
-                    blocked = True
 
         # Per-turn failover: try each model in order. Only fall back to the next model if
         # nothing has streamed yet — never switch models mid-answer. Regenerate on an
@@ -356,12 +337,9 @@ async def chat_stream(request):
                     if kind == "on_chat_model_stream":
                         token = _text_of(getattr(event["data"]["chunk"], "content", ""))
                         if token:
-                            got_text = True
-                            pending += token
-                            async for frame in _flush():
-                                yield frame
-                            if blocked:
-                                break
+                            reply_parts.append(token)
+                            got_text = emitted = True
+                            yield _sse({"text": token})
                     elif kind == "on_chat_model_end":
                         output = event["data"].get("output")
                         content = _text_of(getattr(output, "content", ""))
@@ -394,31 +372,21 @@ async def chat_stream(request):
                         yield _tool_frame(event["name"], "start")
                     elif kind == "on_tool_end":
                         yield _tool_frame(event["name"], "end")
-                # If the answer arrived only as a final message (no streamed tokens),
-                # route it through the guard too.
+                # The answer arrived as one final message rather than streamed tokens.
                 if not got_text and final_text:
-                    got_text = True
-                    pending += final_text
-                # Release the reviewed tail (a final sentence has no trailing space, so it
-                # waits until the stream ends).
-                if pending and not blocked:
-                    async for frame in _flush(force=True):
-                        yield frame
+                    reply_parts.append(final_text)
+                    got_text = emitted = True
+                    yield _sse({"text": final_text})
                 if got_text or tools_shown:
-                    break  # got an answer (or a veto), or already showed tool steps
+                    break  # got an answer, or already showed tool steps (don't replay them)
                 # Empty and nothing shown yet → loop to regenerate with the next model.
             except Exception as exc:  # noqa: BLE001 — any failure triggers failover
                 error = exc
                 if emitted:
                     break  # already streamed part of an answer — don't switch models
 
-        reply = released
-        if blocked:
-            # The guard vetoed the answer. Any safe prefix already shown stays; add a
-            # professional redirect in place of the rejected remainder.
-            yield _sse({"text": GUARD_BLOCK_MESSAGE})
-            reply = f"{released}\n\n{GUARD_BLOCK_MESSAGE}".strip()
-        elif not reply:
+        reply = "".join(reply_parts)
+        if not reply:
             if error is not None:
                 yield _sse({"error": str(error)})
             else:

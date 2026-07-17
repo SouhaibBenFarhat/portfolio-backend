@@ -164,16 +164,15 @@ CHAT_RATE_WINDOW_SECONDS = int(os.getenv("CHAT_RATE_WINDOW_SECONDS", "60"))
 # app counts tokens itself (chat.views records them per model) and compares to this ceiling.
 MISTRAL_FREE_TOKENS_PER_MONTH = int(os.getenv("MISTRAL_FREE_TOKENS_PER_MONTH", "1000000000"))
 
-# --- Chat output guardrail ------------------------------------------------
-# A second (cheap) model call reviews the assistant's reply in buffered chunks before each
-# chunk is streamed to the client (chat/views.py), so an off-topic or prompt-injected
-# answer is caught and replaced with a redirect. Purely backend — nothing unchecked reaches
-# the browser. See chat/guard.py.
+# --- Chat scope check -----------------------------------------------------
+# A cheap model call reads the visitor's message before the agent runs and refuses ones
+# that aren't about Souhaib, so the free tier can't be spent on someone using the chat as a
+# general assistant. Checking the message costs a fraction of generating the answer and
+# then reviewing it, which is why it happens at this end. See chat/guard.py.
 CHAT_GUARD_ENABLED = env_bool("CHAT_GUARD_ENABLED", default=True)
-CHAT_GUARD_MODEL = os.getenv("CHAT_GUARD_MODEL", CHAT_MODEL)  # defaults to the chat model
-# Characters buffered before a chunk is force-reviewed even without sentence-ending
-# punctuation — bounds how much text waits behind the guard, and the guard-call rate.
-CHAT_GUARD_MAX_CHARS = int(os.getenv("CHAT_GUARD_MAX_CHARS", "240"))
+# Deliberately the CHAT_MODEL env var and not the chain's head: this is a one-word
+# classifier, so it has no reason to run on whatever expensive model is answering.
+CHAT_GUARD_MODEL = os.getenv("CHAT_GUARD_MODEL", CHAT_MODEL)
 
 # --- Admin (Unfold theme) -------------------------------------------------
 UNFOLD = {
