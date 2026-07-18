@@ -53,6 +53,9 @@ def test_schema_documents_all_public_endpoints():
     paths = spec["paths"]
     assert "/health" in paths
     assert "/chat/conversations/{conversation_id}/" in paths
+    assert (
+        "/chat/conversations/{conversation_id}/messages/{message_id}/rating/" in paths
+    )  # the DRF rating endpoint
     assert "/chat/stream" in paths  # injected by the postprocessing hook
     assert "/ingest/{subpath}" not in paths  # proxy stays out of the docs
 
@@ -60,3 +63,4 @@ def test_schema_documents_all_public_endpoints():
     assert "ChatStreamRequest" in schemas
     assert "ChatStreamFrame" in schemas  # the SSE-frame union the frontend types from
     assert "ChatSuggestionsFrame" in schemas  # the follow-up chips joined the union
+    assert "ChatMessageIdFrame" in schemas  # the rateable-reply id joined the union

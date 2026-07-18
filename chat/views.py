@@ -26,7 +26,11 @@ from rest_framework.views import APIView
 from .agent import _provider_of, build_agents, context_limit, primary_model
 from .guard import GUARD_BLOCK_MESSAGE, is_message_in_scope
 from .models import ChatModel, Conversation, LLMCredential, Message, RequestLog, TokenUsage
-from .serializers import ConversationRestoreSerializer
+from .serializers import (
+    ConversationRestoreSerializer,
+    MessageRatingRequestSerializer,
+    MessageRatingSerializer,
+)
 from .suggestions import suggest_followups
 from .tools import tool_label
 
@@ -136,6 +140,41 @@ class ConversationDetailView(APIView):
         if not deleted:
             raise NotFound("conversation not found")
         return Response(status=204)
+
+
+class MessageRatingView(APIView):
+    """Set a visitor's thumbs up/down on one message.
+
+    Nested under the conversation so possession of its unguessable UUID is the access
+    check — the same capability model as restore/delete — and the message must belong to
+    that conversation, so message ids can't be rated across threads by enumeration. A
+    sync DRF view (documented by drf-spectacular); Django runs it in a threadpool under
+    the async server. Idempotent: the rating is set to the given value, not accumulated —
+    a message is up, down, or unrated, and the per-conversation total is summed in the
+    admin.
+    """
+
+    @extend_schema(
+        request=MessageRatingRequestSerializer,
+        responses={
+            200: MessageRatingSerializer,
+            404: OpenApiResponse(description="Unknown conversation, or message not in it."),
+        },
+        summary="Rate a message",
+        description="Set thumbs up (+1), down (-1), or clear (0) on one message of a "
+        "conversation. Idempotent — replaces any previous rating.",
+    )
+    def put(self, request, conversation_id, message_id):
+        body = MessageRatingRequestSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        message = Message.objects.filter(conversation_id=conversation_id, id=message_id).first()
+        if message is None:
+            raise NotFound("message not found")
+        # 0 clears the rating; -1/1 are truthy and pass through. Stored as null when
+        # cleared so an unrated message never counts toward a conversation's totals.
+        message.rating = body.validated_data["rating"] or None
+        message.save(update_fields=["rating"])
+        return Response({"id": message.id, "rating": message.rating})
 
 
 def _text_of(content) -> str:
@@ -440,9 +479,12 @@ async def chat_stream(request):
         # complete reply that inexplicably stops. The user message is already saved, so
         # the visitor can just re-ask.
         if reply and error is None:
-            await Message.objects.acreate(
+            assistant_message = await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply
             )
+            # Name the persisted reply so the widget can rate it live (thumbs up/down)
+            # without waiting for a reload to learn its id.
+            yield _sse({"message_id": assistant_message.id})
 
         # Persist this turn's consumption (all attempts) so the admin can total tokens
         # per model against the free-tier ceiling. Cumulative, unlike the gauge below.

@@ -10,8 +10,31 @@ from .models import Message
 
 
 class MessageSerializer(serializers.Serializer):
+    id = serializers.IntegerField(help_text="Message id — the target of the rating endpoint.")
     role = serializers.ChoiceField(choices=Message.Role.choices, help_text='"user" or "assistant".')
     content = serializers.CharField()
+    rating = serializers.IntegerField(
+        allow_null=True, help_text="Stored feedback: +1 up, -1 down, null if unrated."
+    )
+
+
+class MessageRatingRequestSerializer(serializers.Serializer):
+    """The body of a rating request: the new thumbs value for one message."""
+
+    rating = serializers.IntegerField(
+        min_value=-1,
+        max_value=1,
+        help_text="+1 thumbs up, -1 thumbs down, 0 to clear a previous rating.",
+    )
+
+
+class MessageRatingSerializer(serializers.Serializer):
+    """A message's rating after it's set — what the rating endpoint returns."""
+
+    id = serializers.IntegerField(help_text="The rated message's id.")
+    rating = serializers.IntegerField(
+        allow_null=True, help_text="The stored value: +1, -1, or null once cleared."
+    )
 
 
 class ChatUsageSerializer(serializers.Serializer):

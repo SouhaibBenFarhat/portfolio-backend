@@ -16,7 +16,7 @@ from django import forms
 from django.conf import settings
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied
-from django.db.models import F, Window
+from django.db.models import Count, F, Q, Window
 from django.db.models.functions import RowNumber
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -346,7 +346,7 @@ class DocumentAdmin(ModelAdmin):
 class MessageInline(TabularInline):
     model = Message
     extra = 0
-    readonly_fields = ("role", "content", "created_at")
+    readonly_fields = ("role", "content", "rating", "created_at")
     can_delete = False
 
     def has_add_permission(self, request, obj=None):
@@ -355,9 +355,29 @@ class MessageInline(TabularInline):
 
 @admin.register(Conversation)
 class ConversationAdmin(ModelAdmin):
-    list_display = ("id", "created_at", "updated_at")
+    list_display = ("id", "created_at", "updated_at", "rating_summary")
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = [MessageInline]
+
+    def get_queryset(self, request):
+        # Sum each thread's thumbs in one query, so the changelist doesn't run a count
+        # per row. Ups and downs stay separate columns: a lively thread with praise and
+        # complaints in equal measure should read differently from an unrated one, which
+        # a single net figure would hide.
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(
+                ups=Count("messages", filter=Q(messages__rating=Message.Rating.UP)),
+                downs=Count("messages", filter=Q(messages__rating=Message.Rating.DOWN)),
+            )
+        )
+
+    @admin.display(description="ratings")
+    def rating_summary(self, obj):
+        if not (obj.ups or obj.downs):
+            return "—"
+        return f"↑ {obj.ups}  ↓ {obj.downs}"
 
     def has_add_permission(self, request):
         return False

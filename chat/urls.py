@@ -13,4 +13,9 @@ urlpatterns = [
         views.ConversationDetailView.as_view(),
         name="conversation_detail",
     ),
+    path(
+        "conversations/<uuid:conversation_id>/messages/<int:message_id>/rating/",
+        views.MessageRatingView.as_view(),
+        name="message_rating",
+    ),
 ]
