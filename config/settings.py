@@ -174,6 +174,17 @@ CHAT_GUARD_ENABLED = env_bool("CHAT_GUARD_ENABLED", default=True)
 # classifier, so it has no reason to run on whatever expensive model is answering.
 CHAT_GUARD_MODEL = os.getenv("CHAT_GUARD_MODEL", CHAT_MODEL)
 
+# --- Follow-up suggestions ------------------------------------------------
+# After each reply, a cheap model call writes up to 3 questions the visitor could ask
+# next, streamed as a `suggestions` frame and rendered as tappable chips. A recruiter
+# doesn't know what the assistant can answer — the chips do the prompting for them.
+# See chat/suggestions.py.
+CHAT_SUGGESTIONS_ENABLED = env_bool("CHAT_SUGGESTIONS_ENABLED", default=True)
+# Pinned to the CHAT_MODEL env var, not the chain's head, for the same reason as
+# CHAT_GUARD_MODEL: a chip writer has no reason to run on whatever expensive model is
+# answering.
+CHAT_SUGGESTIONS_MODEL = os.getenv("CHAT_SUGGESTIONS_MODEL", CHAT_MODEL)
+
 # --- Admin (Unfold theme) -------------------------------------------------
 UNFOLD = {
     "SITE_TITLE": "portfolio-backend",

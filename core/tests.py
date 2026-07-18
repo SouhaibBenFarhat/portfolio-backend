@@ -59,3 +59,4 @@ def test_schema_documents_all_public_endpoints():
     schemas = spec["components"]["schemas"]
     assert "ChatStreamRequest" in schemas
     assert "ChatStreamFrame" in schemas  # the SSE-frame union the frontend types from
+    assert "ChatSuggestionsFrame" in schemas  # the follow-up chips joined the union

@@ -2053,3 +2053,247 @@ def test_add_form_does_not_preselect_a_suggestion(client):
     first_option = re.search(r'name="model_id".*?<option value="([^"]*)"', html, re.DOTALL)
     assert first_option is not None
     assert first_option.group(1) == ""
+
+
+# --- Follow-up suggestion chips ---------------------------------------------
+
+
+def _suggestions_from(body: str) -> list | None:
+    """The payload of the stream's `suggestions` frame, or None if it wasn't sent."""
+    for frame in body.split("\n\n"):
+        line = frame.replace("data: ", "").strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "suggestions" in data:
+            return data["suggestions"]
+    return None
+
+
+def test_parse_suggestions_tolerates_numbering_bullets_quotes_and_preamble():
+    """Preamble ("Sure, here are…") must not become a tappable chip, and must not push a
+    real question past the 3-chip cap."""
+    from chat.suggestions import _parse_suggestions
+
+    text = (
+        "Sure, here are three questions:\n"
+        "1. What projects has he built?\n"
+        "- Is he available right now?\n"
+        '• "Where is he based?"\n'
+        "A fourth question that must be dropped?"
+    )
+    assert _parse_suggestions(text) == [
+        "What projects has he built?",
+        "Is he available right now?",
+        "Where is he based?",
+    ]
+
+
+def test_suggest_followups_returns_no_chips_with_no_key():
+    """Unlike the scope check there is nothing to fail open to — no key just means the
+    chat runs without chips."""
+    from chat import suggestions
+
+    with patch.object(suggestions, "_suggestions_key", return_value=""):
+        assert asyncio.run(suggestions.suggest_followups([], "an answer", api_key=None)) == []
+
+
+def test_suggest_followups_swallows_a_writer_failure():
+    """Chips are garnish — a failed writer means no chips, never a broken turn."""
+    from chat import suggestions
+
+    def _boom(_key):
+        raise RuntimeError("writer down")
+
+    with patch.object(suggestions, "build_suggestions_model", side_effect=_boom):
+        result = asyncio.run(
+            suggestions.suggest_followups([{"role": "user", "content": "hi"}], "hello", api_key="k")
+        )
+    assert result == []
+
+
+def test_suggest_followups_shows_the_writer_the_exchange():
+    """The writer sees the visitor's question and the streamed reply — chips written
+    blind would suggest what was just answered."""
+    from chat import suggestions
+
+    captured = {}
+
+    class _Writer:
+        async def ainvoke(self, messages):
+            captured["prompt"] = messages[-1].content
+            return SimpleNamespace(content="What else has he built?\nIs he available?")
+
+    async def _run():
+        history = [{"role": "user", "content": "does he know django?"}]
+        with patch.object(suggestions, "build_suggestions_model", return_value=_Writer()):
+            return await suggestions.suggest_followups(history, "He knows Django!", api_key="k")
+
+    assert asyncio.run(_run()) == ["What else has he built?", "Is he available?"]
+    assert "does he know django?" in captured["prompt"]
+    assert "He knows Django!" in captured["prompt"]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_suggestions_frame_arrives_after_the_gauge_and_before_done():
+    """Chips are the last frame before done: the gauge (and its budget save) land first,
+    so a disconnect during the chip writer's call can never lose them."""
+
+    async def _run():
+        with (
+            patch("chat.views.build_agents", return_value=(_UsageAgent(),)),
+            patch(
+                "chat.views.suggest_followups",
+                new=AsyncMock(return_value=["What projects has he built?"]),
+            ),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert _suggestions_from(body) == ["What projects has he built?"]
+    assert body.index('"text"') < body.index('"usage"')
+    assert body.index('"usage"') < body.index('"suggestions"')
+    assert body.index('"suggestions"') < body.index('"done"')
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_suggestions_frame_when_the_writer_returns_nothing():
+    async def _run():
+        with (
+            patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
+            patch("chat.views.suggest_followups", new=AsyncMock(return_value=[])),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert _suggestions_from(body) is None
+    assert '"done": true' in body
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_suggestions_after_a_broken_turn():
+    """A turn that errored ends with the error frame — chips inviting another question
+    would ring hollow next to it, even when a preamble already streamed."""
+    chips = AsyncMock(return_value=["Anything else?"])
+
+    async def _run():
+        with (
+            patch("chat.views.build_agents", return_value=(_StreamsThenFailsAgent(),)),
+            patch("chat.views.suggest_followups", new=chips),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert '"error"' in body
+    assert _suggestions_from(body) is None
+    assert chips.await_count == 0  # never even called on a broken turn
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_suggestions_when_the_thread_just_spent_its_budget():
+    """The next send would be refused with a 403 — chips inviting one would be a lie."""
+    chips = AsyncMock(return_value=["Tell me more?"])
+
+    async def _run():
+        with (
+            override_settings(CHAT_MAX_CONTEXT_TOKENS=400),  # _UsageAgent reports 450
+            patch("chat.views.build_agents", return_value=(_UsageAgent(),)),
+            patch("chat.views.suggest_followups", new=chips),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert _usage_from(body)["exhausted"] is True  # the gauge still reports the spend
+    assert _suggestions_from(body) is None
+    assert chips.await_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_suggestions_when_every_model_returned_empty():
+    """The canned "couldn't find an answer" line is not a model answer — chips inviting
+    follow-ups to it would spend another call on the chain that just came back empty."""
+    chips = AsyncMock(return_value=["Try again?"])
+
+    async def _run():
+        with (
+            patch("chat.views.build_agents", return_value=(_EmptyAgent(), _EmptyAgent())),
+            patch("chat.views.suggest_followups", new=chips),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert "couldn't find an answer" in body  # the graceful line still streams
+    assert _suggestions_from(body) is None
+    assert chips.await_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_suggestions_on_a_refused_message():
+    """The redirect already tells the visitor what to ask — and the whole point of
+    refusing early is keeping the off-topic path to one cheap call, not two."""
+    chips = AsyncMock(return_value=["What are his skills?"])
+
+    async def _run():
+        with (
+            patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
+            patch("chat.views.is_message_in_scope", new=AsyncMock(return_value=False)),
+            patch("chat.views.suggest_followups", new=chips),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "teach me python"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert _suggestions_from(body) is None
+    assert chips.await_count == 0
+
+
+@pytest.mark.django_db(transaction=True)
+def test_suggestions_can_be_disabled():
+    """With CHAT_SUGGESTIONS_ENABLED off the writer never runs and no frame is sent."""
+    chips = AsyncMock(return_value=["Should not appear"])
+
+    async def _run():
+        with (
+            override_settings(CHAT_SUGGESTIONS_ENABLED=False),
+            patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
+            patch("chat.views.suggest_followups", new=chips),
+        ):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            return await _drain(response)
+
+    body = asyncio.run(_run())
+    assert _suggestions_from(body) is None
+    assert chips.await_count == 0

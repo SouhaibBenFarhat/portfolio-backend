@@ -271,6 +271,23 @@ sits at the head of the chain above. It's a one-word classifier, so it has no re
 on the expensive model, and pinning it means dragging a paid model to the top doesn't
 quietly put every check on it too.
 
+## AI chat — follow-up chips
+
+A visitor doesn't know what the assistant can answer, so after each reply a second cheap
+model call ([`chat/suggestions.py`](./chat/suggestions.py)) reads the exchange and writes
+up to 3 questions they could ask next, streamed as a `suggestions` frame and rendered by
+the widget as tappable chips.
+
+Chips are garnish, never load-bearing: the call has a hard timeout and any failure or
+empty result just means no chips that turn. They're skipped when no model actually
+answered (an error or the canned fallback), when the thread just spent its context budget
+(the next send would be refused — inviting one would be a lie), and on refused messages
+(the redirect already says what to ask, and the off-topic path stays one cheap call). The
+frame comes last, after the gauge, so the budget save never waits on the chip writer.
+Knobs: `CHAT_SUGGESTIONS_ENABLED` (default on),
+`CHAT_SUGGESTIONS_MODEL` (defaults to the `CHAT_MODEL` env var, same reasoning as the
+scope check's model).
+
 ## Roadmap
 
 - [x] Deployed running server + health check + CI

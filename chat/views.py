@@ -23,10 +23,11 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .agent import build_agents, context_limit, primary_model
+from .agent import _provider_of, build_agents, context_limit, primary_model
 from .guard import GUARD_BLOCK_MESSAGE, is_message_in_scope
 from .models import ChatModel, Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import ConversationRestoreSerializer
+from .suggestions import suggest_followups
 from .tools import tool_label
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
@@ -234,7 +235,8 @@ async def chat_stream(request):
     Expects POST JSON `{"message": "...", "conversation_id": "<optional uuid>"}`.
     The first frame is `{"conversation_id": ...}` (so the client can continue the
     thread), followed by `{"text": ...}` token frames, a `{"usage": ...}` frame with
-    the turn's context-window figures, and a final `{"done": true}`.
+    the turn's context-window figures, a `{"suggestions": ...}` frame with follow-up
+    chips, and a final `{"done": true}`.
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=405)
@@ -415,6 +417,10 @@ async def chat_stream(request):
                     break  # already streamed part of an answer — don't switch models
 
         reply = "".join(reply_parts)
+        # A model actually answered. The canned fallback below doesn't count — chips
+        # inviting follow-ups to an answer that never happened would spend another call
+        # on the same chain that just came back empty.
+        answered = bool(reply) and error is None
         if error is not None:
             # The turn broke. Surface it even if a preamble had already streamed —
             # otherwise the answer just stops dead with no explanation (the exact bug
@@ -446,10 +452,24 @@ async def chat_stream(request):
         # Record how full the thread's context got, so the next turn can be refused once
         # it's spent and a reload can restore the gauge. Omitted when the provider
         # reported no usage, so a missing number never looks like an empty context.
-        if prompt_tokens:
+        # Persisted before the suggestions call below: a disconnect during that extra
+        # network call must not lose the budget save.
+        gauge = _usage_payload(prompt_tokens, usage_model) if prompt_tokens else None
+        if gauge:
             conversation.context_tokens = prompt_tokens
             await conversation.asave(update_fields=["context_tokens", "updated_at"])
-            yield _sse({"usage": _usage_payload(prompt_tokens, usage_model)})
+            yield _sse({"usage": gauge})
+
+        # Follow-up chips, last before done — only the closing frame waits on the writer.
+        # Skipped when no model actually answered (chips next to an error or the canned
+        # apology ring hollow) and when the thread just spent its budget (the next send
+        # would be refused, so inviting one would be a lie). Empty result = no chips.
+        if answered and settings.CHAT_SUGGESTIONS_ENABLED and not (gauge and gauge["exhausted"]):
+            provider = _provider_of(settings.CHAT_SUGGESTIONS_MODEL)
+            suggestions_key = (provider_keys.get(provider) or [None])[0]
+            suggestions = await suggest_followups(history, reply, api_key=suggestions_key)
+            if suggestions:
+                yield _sse({"suggestions": suggestions})
         yield _sse({"done": True})
 
     response = StreamingHttpResponse(event_stream(), content_type="text/event-stream")
