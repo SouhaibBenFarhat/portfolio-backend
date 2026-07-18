@@ -9,6 +9,7 @@ Conversations are shown read-only so you can review chats without editing them.
 
 import os
 import re
+from functools import lru_cache
 
 import litellm
 from django import forms
@@ -24,7 +25,11 @@ from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.http import content_disposition_header
 from unfold.admin import ModelAdmin, TabularInline
-from unfold.widgets import UnfoldAdminFileFieldWidget, UnfoldBooleanWidget
+from unfold.widgets import (
+    UnfoldAdminFileFieldWidget,
+    UnfoldAdminSelect2Widget,
+    UnfoldBooleanWidget,
+)
 
 from .agent import context_limit
 from .extraction import MAX_UPLOAD_BYTES, content_type_for, extract_text
@@ -36,8 +41,67 @@ from .models import ChatModel, Conversation, Document, Fact, LLMCredential, Mess
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
 
+class SearchableSelect(UnfoldAdminSelect2Widget):
+    """A Select2 dropdown — opens on click, with a search box — that still accepts
+    values outside its suggestions.
+
+    A strict `<select>` would only offer what LiteLLM has catalogued — and its table
+    lags new releases (`gemini/gemma-4-31b-it` routes fine but isn't listed), so the
+    newest model is exactly the one a hard dropdown would reject. Two things keep free
+    entry working: `data-tags` lets the search box submit a value that isn't in the
+    list (Unfold's select2 init passes `data-*` options through), and the bound value
+    is grafted into the options so a saved uncatalogued id renders selected on the
+    change form instead of silently blanking.
+
+    `options` is a callable so the (cached) suggestion lists are built on first
+    render, not at import time.
+    """
+
+    def __init__(self, options, attrs=None):
+        super().__init__(attrs={"data-tags": "true", **(attrs or {})})
+        self._options = options
+
+    def optgroups(self, name, value, attrs=None):
+        suggestions = self._options()
+        current = [v for v in value if v and v not in suggestions]
+        # The leading empty option keeps the add form blank rather than silently
+        # preselecting the alphabetically-first suggestion.
+        self.choices = [("", "")] + [(v, v) for v in (*current, *suggestions)]
+        return super().optgroups(name, value, attrs)
+
+
+@lru_cache(maxsize=1)
+def _provider_suggestions() -> tuple[str, ...]:
+    """Every provider LiteLLM can route, plus the integration names this credential
+    store also holds (github). Cached — the list is static for the process."""
+    providers = {str(getattr(provider, "value", provider)) for provider in litellm.provider_list}
+    return tuple(sorted(providers | {"github"}))
+
+
+@lru_cache(maxsize=1)
+def _model_id_suggestions() -> tuple[str, ...]:
+    """Provider-prefixed chat model ids from LiteLLM's catalogue. Prefixed only — the
+    prefix is what picks the API key — and chat-mode only (the table also carries
+    embedding/image entries the chain can't use). Cached — it's a static table."""
+    return tuple(
+        sorted(
+            model_id
+            for model_id, info in litellm.model_cost.items()
+            if "/" in model_id and isinstance(info, dict) and info.get("mode") == "chat"
+        )
+    )
+
+
+class LLMCredentialAdminForm(forms.ModelForm):
+    class Meta:
+        model = LLMCredential
+        fields = "__all__"
+        widgets = {"provider": SearchableSelect(_provider_suggestions)}
+
+
 @admin.register(LLMCredential)
 class LLMCredentialAdmin(ModelAdmin):
+    form = LLMCredentialAdminForm
     list_display = ("provider", "label", "masked_key", "is_active", "updated_at")
     list_filter = ("provider", "is_active")
     list_editable = ("is_active",)
@@ -55,6 +119,7 @@ class ChatModelAdminForm(forms.ModelForm):
     class Meta:
         model = ChatModel
         fields = ["model_id", "order", "is_active"]
+        widgets = {"model_id": SearchableSelect(_model_id_suggestions)}
 
     def clean_model_id(self):
         model_id = (self.cleaned_data.get("model_id") or "").strip()

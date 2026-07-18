@@ -8,6 +8,7 @@ Phase 2 guards: conversation persistence and memory across messages.
 
 import asyncio
 import json
+import re
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -1970,3 +1971,85 @@ def test_seeded_chain_matches_the_env_vars_it_replaced(client):
     assert active == resolve_chain([])  # identical to the env-var chain
     # GLM is seeded but off — it needs a key before it can answer.
     assert ChatModel.objects.filter(model_id="zai/glm-4.7-flash", is_active=False).exists()
+
+
+# --- Dropdown suggestions for model ids and providers ------------------------
+
+
+def test_model_id_suggestions_are_prefixed_chat_models():
+    """The dropdown offers ids the chain can actually use: provider-prefixed (the
+    prefix picks the API key) and chat-mode (the table also lists embedding models)."""
+    from chat.admin import _model_id_suggestions
+
+    suggestions = _model_id_suggestions()
+    assert "mistral/mistral-small-latest" in suggestions
+    assert all("/" in model_id for model_id in suggestions)
+
+
+def test_provider_suggestions_include_llm_providers_and_github():
+    from chat.admin import _provider_suggestions
+
+    suggestions = _provider_suggestions()
+    assert "mistral" in suggestions
+    assert "gemini" in suggestions
+    assert "github" in suggestions  # integration tokens live in the same store
+
+
+@pytest.mark.django_db
+def test_chat_model_form_still_accepts_an_id_the_dropdown_does_not_offer():
+    """The dropdown suggests, it must not restrict: the newest models — the reason to
+    add a row at all — are exactly the ones LiteLLM's table doesn't list yet."""
+    from chat.admin import ChatModelAdminForm, _model_id_suggestions
+
+    model_id = "mistral/some-model-from-the-future"
+    assert model_id not in _model_id_suggestions()
+    form = ChatModelAdminForm(data={"model_id": model_id, "order": 0, "is_active": "on"})
+    assert form.is_valid(), form.errors
+
+
+@pytest.mark.django_db
+def test_admin_add_pages_render_the_searchable_dropdowns(client):
+    """Both add pages carry the Select2 dropdowns with free entry (data-tags) enabled —
+    catches template/widget breakage the form-level tests can't see."""
+    from django.contrib.auth.models import User
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+
+    model_add = client.get("/admin/chat/chatmodel/add/").content.decode()
+    assert "unfold-admin-autocomplete" in model_add
+    assert 'data-tags="true"' in model_add
+    assert 'value="mistral/mistral-small-latest"' in model_add
+    assert "select2.full.js" in model_add  # the widget's Media made it onto the page
+
+    credential_add = client.get("/admin/chat/llmcredential/add/").content.decode()
+    assert 'data-tags="true"' in credential_add
+    assert 'value="github"' in credential_add
+
+
+@pytest.mark.django_db
+def test_change_form_keeps_a_saved_id_the_catalogue_does_not_know(client):
+    """A saved uncatalogued id (a brand-new model) must render selected on the change
+    form — a strict choice list would silently blank it and Save would wipe the row."""
+    from django.contrib.auth.models import User
+
+    from chat.models import ChatModel
+
+    row = ChatModel.objects.create(model_id="mistral/some-model-from-the-future", order=9)
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    html = client.get(f"/admin/chat/chatmodel/{row.pk}/change/").content.decode()
+
+    assert 'value="mistral/some-model-from-the-future" selected' in html
+
+
+@pytest.mark.django_db
+def test_add_form_does_not_preselect_a_suggestion(client):
+    """The blank leading option: without it the browser shows the alphabetically first
+    catalogue entry as if it were chosen, and Save would create that model."""
+    from django.contrib.auth.models import User
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    html = client.get("/admin/chat/chatmodel/add/").content.decode()
+
+    first_option = re.search(r'name="model_id".*?<option value="([^"]*)"', html, re.DOTALL)
+    assert first_option is not None
+    assert first_option.group(1) == ""
