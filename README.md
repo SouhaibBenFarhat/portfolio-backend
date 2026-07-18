@@ -31,6 +31,7 @@ Browser ──► Astro site (GitHub Pages, static)
 | GET    | `/api/schema/`    | OpenAPI 3 schema (the contract; feeds frontend type generation)|
 | POST   | `/chat/stream`    | Streaming AI chat (Server-Sent Events)                         |
 | GET    | `/chat/conversations/<uuid>/` | Restore a stored conversation                      |
+| PUT    | `/chat/conversations/<uuid>/messages/<id>/rating/` | Rate a message (thumbs up/down)   |
 | ANY    | `/ingest/<path>`  | Reverse proxy to PostHog (see below)                           |
 
 ## API documentation (OpenAPI / Swagger)
@@ -287,6 +288,28 @@ frame comes last, after the gauge, so the budget save never waits on the chip wr
 Knobs: `CHAT_SUGGESTIONS_ENABLED` (default on),
 `CHAT_SUGGESTIONS_MODEL` (defaults to the `CHAT_MODEL` env var, same reasoning as the
 scope check's model).
+
+## AI chat — message ratings
+
+Each message carries a visitor's thumbs up/down so replies can be judged and reviewed.
+The widget shows a 👍/👎 on each message; a tap sets the rating through DRF:
+
+```
+PUT /chat/conversations/<uuid>/messages/<id>/rating/   { "rating": 1 | -1 | 0 }
+```
+
+- Stored per message (`Message.rating`: `+1`, `-1`, or null when unrated — null is "no
+  opinion", so an untouched thread reads as empty feedback, not neutral). `0` clears a
+  previous rating back to null. Setting, not accumulating: a message is up, down, or
+  unrated.
+- **Nested under the conversation on purpose.** Possessing the thread's unguessable UUID
+  is the access check (same as restore/delete), and the message must belong to it — so
+  sequential message ids can't be rated across threads by enumeration.
+- The widget learns a message's id two ways: the restore payload now carries each
+  message's `id` and `rating`, and a live reply's id arrives in a `message_id` SSE frame
+  so it can be rated without waiting for a reload.
+- Summed per conversation in the admin (a `↑ n  ↓ n` column on the conversation list,
+  and each message's rating in the thread view) — one annotated query, no per-row counts.
 
 ## Roadmap
 

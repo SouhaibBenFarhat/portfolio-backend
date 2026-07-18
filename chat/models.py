@@ -34,11 +34,24 @@ class Message(models.Model):
         USER = "user", "User"
         ASSISTANT = "assistant", "Assistant"
 
+    class Rating(models.IntegerChoices):
+        DOWN = -1, "Thumbs down"
+        UP = 1, "Thumbs up"
+
     conversation = models.ForeignKey(
         Conversation, related_name="messages", on_delete=models.CASCADE
     )
     role = models.CharField(max_length=16, choices=Role.choices)
     content = models.TextField()
+    # A visitor's thumbs up/down on this message: +1, -1, or null when unrated. Set from
+    # the widget via the rating endpoint and summed per conversation in the admin. Null
+    # (not 0) is "no opinion", so an unrated thread reads as empty feedback, not neutral.
+    rating = models.SmallIntegerField(
+        null=True,
+        blank=True,
+        choices=Rating.choices,
+        help_text="Visitor feedback: +1 up, -1 down, blank if unrated.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

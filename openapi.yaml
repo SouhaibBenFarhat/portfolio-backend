@@ -67,6 +67,49 @@ paths:
           description: Conversation deleted.
         '404':
           description: Unknown conversation.
+  /chat/conversations/{conversation_id}/messages/{message_id}/rating/:
+    put:
+      operationId: chat_conversations_messages_rating_update
+      description: Set thumbs up (+1), down (-1), or clear (0) on one message of a
+        conversation. Idempotent — replaces any previous rating.
+      summary: Rate a message
+      parameters:
+      - in: path
+        name: conversation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: message_id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - chat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRatingRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MessageRatingRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MessageRatingRequest'
+        required: true
+      security:
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageRating'
+          description: ''
+        '404':
+          description: Unknown conversation, or message not in it.
   /health:
     get:
       operationId: health_retrieve
@@ -110,7 +153,7 @@ paths:
       description: |-
         Runs the LangGraph agent and streams its reply as `text/event-stream`.
 
-        The body is `data: <json>\n\n` frames: first a `ChatConversationIdFrame`, then a `ChatModelFrame` naming the answering model, then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, a `ChatSuggestionsFrame` with follow-up chips, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a message-length cap.
+        The body is `data: <json>\n\n` frames: first a `ChatConversationIdFrame`, then a `ChatModelFrame` naming the answering model, then `ChatTextFrame` tokens interleaved with `ChatToolFrame` steps, then a `ChatMessageIdFrame` naming the persisted reply, a `ChatUsageFrame`, a `ChatSuggestionsFrame` with follow-up chips, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a message-length cap.
       requestBody:
         required: true
         content:
@@ -184,6 +227,9 @@ components:
     Message:
       type: object
       properties:
+        id:
+          type: integer
+          description: Message id — the target of the rating endpoint.
         role:
           allOf:
           - $ref: '#/components/schemas/RoleEnum'
@@ -194,9 +240,40 @@ components:
             * `assistant` - Assistant
         content:
           type: string
+        rating:
+          type: integer
+          nullable: true
+          description: 'Stored feedback: +1 up, -1 down, null if unrated.'
       required:
       - content
+      - id
+      - rating
       - role
+    MessageRating:
+      type: object
+      description: A message's rating after it's set — what the rating endpoint returns.
+      properties:
+        id:
+          type: integer
+          description: The rated message's id.
+        rating:
+          type: integer
+          nullable: true
+          description: 'The stored value: +1, -1, or null once cleared.'
+      required:
+      - id
+      - rating
+    MessageRatingRequest:
+      type: object
+      description: 'The body of a rating request: the new thumbs value for one message.'
+      properties:
+        rating:
+          type: integer
+          maximum: 1
+          minimum: -1
+          description: +1 thumbs up, -1 thumbs down, 0 to clear a previous rating.
+      required:
+      - rating
     RoleEnum:
       enum:
       - user
@@ -299,6 +376,16 @@ components:
           enum:
           - start
           - end
+    ChatMessageIdFrame:
+      type: object
+      description: The id of the persisted assistant reply, so the client can rate
+        it (thumbs up/down via the rating endpoint) without waiting for a reload.
+        Sent once, after the answer; absent when the turn broke and nothing was persisted.
+      required:
+      - message_id
+      properties:
+        message_id:
+          type: integer
     ChatUsageFrame:
       type: object
       description: How full the thread's context is, for the client's gauge. Sent
@@ -356,6 +443,7 @@ components:
       - $ref: '#/components/schemas/ChatModelFrame'
       - $ref: '#/components/schemas/ChatTextFrame'
       - $ref: '#/components/schemas/ChatToolFrame'
+      - $ref: '#/components/schemas/ChatMessageIdFrame'
       - $ref: '#/components/schemas/ChatUsageFrame'
       - $ref: '#/components/schemas/ChatSuggestionsFrame'
       - $ref: '#/components/schemas/ChatErrorFrame'

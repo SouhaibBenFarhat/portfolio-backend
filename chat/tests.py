@@ -2297,3 +2297,187 @@ def test_suggestions_can_be_disabled():
     body = asyncio.run(_run())
     assert _suggestions_from(body) is None
     assert chips.await_count == 0
+
+
+# --- Message ratings (thumbs up/down) ---------------------------------------
+
+
+def _message_id_from(body: str) -> int | None:
+    """The id from the stream's `message_id` frame, or None if it wasn't sent."""
+    for frame in body.split("\n\n"):
+        line = frame.replace("data: ", "").strip()
+        if not line:
+            continue
+        data = json.loads(line)
+        if "message_id" in data:
+            return data["message_id"]
+    return None
+
+
+@pytest.mark.django_db
+def test_message_rating_defaults_to_null():
+    """An unrated message is null, not 0 — 'no opinion', so it never counts as neutral
+    feedback in a conversation's totals."""
+    from chat.models import Conversation, Message
+
+    conv = Conversation.objects.create()
+    message = Message.objects.create(conversation=conv, role="assistant", content="hi")
+    assert message.rating is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rate_a_message_up_then_down_then_clear():
+    """The rating is set, not accumulated: each call replaces the last, and 0 clears it."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conv = await Conversation.objects.acreate()
+        msg = await Message.objects.acreate(conversation=conv, role="assistant", content="hi")
+        url = f"/chat/conversations/{conv.id}/messages/{msg.id}/rating/"
+        results = []
+        for value in (1, -1, 0):
+            res = await AsyncClient().put(
+                url, data=json.dumps({"rating": value}), content_type="application/json"
+            )
+            await msg.arefresh_from_db()
+            results.append((res.status_code, json.loads(res.content)["rating"], msg.rating))
+        return results
+
+    assert asyncio.run(_run()) == [
+        (200, 1, 1),
+        (200, -1, -1),
+        (200, None, None),  # 0 clears to null, never stored as 0
+    ]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rating_an_unknown_message_is_404():
+    async def _run():
+        from chat.models import Conversation
+
+        conv = await Conversation.objects.acreate()
+        return await AsyncClient().put(
+            f"/chat/conversations/{conv.id}/messages/999999/rating/",
+            data=json.dumps({"rating": 1}),
+            content_type="application/json",
+        )
+
+    assert asyncio.run(_run()).status_code == 404
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_message_can_only_be_rated_through_its_own_conversation():
+    """The conversation UUID is the capability: a real message id under someone else's
+    conversation is a 404, so ids can't be rated across threads by enumeration."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        owner = await Conversation.objects.acreate()
+        other = await Conversation.objects.acreate()
+        msg = await Message.objects.acreate(conversation=owner, role="assistant", content="hi")
+        res = await AsyncClient().put(
+            f"/chat/conversations/{other.id}/messages/{msg.id}/rating/",
+            data=json.dumps({"rating": 1}),
+            content_type="application/json",
+        )
+        await msg.arefresh_from_db()
+        return res.status_code, msg.rating
+
+    status, rating = asyncio.run(_run())
+    assert status == 404
+    assert rating is None  # the message under the owner was left untouched
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rating_rejects_an_out_of_range_value():
+    """Only -1/0/1 are ratings; anything else is a 400, not a stored nonsense value."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conv = await Conversation.objects.acreate()
+        msg = await Message.objects.acreate(conversation=conv, role="assistant", content="hi")
+        res = await AsyncClient().put(
+            f"/chat/conversations/{conv.id}/messages/{msg.id}/rating/",
+            data=json.dumps({"rating": 2}),
+            content_type="application/json",
+        )
+        await msg.arefresh_from_db()
+        return res.status_code, msg.rating
+
+    status, rating = asyncio.run(_run())
+    assert status == 400
+    assert rating is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_restore_carries_each_message_id_and_rating():
+    """The widget needs a message's id to rate it and its rating to show the current
+    thumb state — both must survive a reload."""
+
+    async def _run():
+        from chat.models import Conversation, Message
+
+        conv = await Conversation.objects.acreate()
+        await Message.objects.acreate(conversation=conv, role="user", content="hi")
+        await Message.objects.acreate(
+            conversation=conv, role="assistant", content="hello!", rating=1
+        )
+        res = await AsyncClient().get(f"/chat/conversations/{conv.id}/")
+        return json.loads(res.content)["messages"]
+
+    messages = asyncio.run(_run())
+    assert all("id" in m for m in messages)
+    assert messages[0]["rating"] is None  # the user message, unrated
+    assert messages[1]["rating"] == 1  # the rated assistant reply
+
+
+@pytest.mark.django_db(transaction=True)
+def test_stream_names_the_persisted_assistant_message():
+    """The reply's id streams live, so the visitor can rate it without a reload — and it
+    matches the actually-persisted assistant message."""
+
+    async def _run():
+        from chat.models import Message
+
+        with patch("chat.views.build_agents", return_value=(_RecordingAgent(reply="hello"),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+            body = await _drain(response)
+        stored = await Message.objects.aget(role="assistant")
+        return _message_id_from(body), stored.id
+
+    frame_id, stored_id = asyncio.run(_run())
+    assert frame_id == stored_id
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_broken_turn_streams_no_message_id():
+    """No reply is persisted on a broken turn, so there's nothing to rate — no frame."""
+    body = _post_and_drain((_FailingAgent(), _FailingAgent()))
+    assert '"error"' in body
+    assert _message_id_from(body) is None
+
+
+@pytest.mark.django_db
+def test_conversation_admin_summarizes_ratings(client):
+    """The admin totals each thread's thumbs so chats can be reviewed at a glance."""
+    from django.contrib.auth.models import User
+
+    from chat.models import Conversation, Message
+
+    conv = Conversation.objects.create()
+    Message.objects.create(conversation=conv, role="assistant", content="a", rating=1)
+    Message.objects.create(conversation=conv, role="assistant", content="b", rating=1)
+    Message.objects.create(conversation=conv, role="assistant", content="c", rating=-1)
+    Message.objects.create(conversation=conv, role="assistant", content="d")  # unrated
+
+    client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
+    html = client.get("/admin/chat/conversation/").content.decode()
+    assert "↑ 2" in html
+    assert "↓ 1" in html

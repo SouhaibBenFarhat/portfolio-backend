@@ -72,6 +72,14 @@ _FRAME_SCHEMAS = {
             "status": {"type": "string", "enum": ["start", "end"]},
         },
     },
+    "ChatMessageIdFrame": {
+        "type": "object",
+        "description": "The id of the persisted assistant reply, so the client can rate it "
+        "(thumbs up/down via the rating endpoint) without waiting for a reload. Sent once, "
+        "after the answer; absent when the turn broke and nothing was persisted.",
+        "required": ["message_id"],
+        "properties": {"message_id": {"type": "integer"}},
+    },
     "ChatUsageFrame": {
         "type": "object",
         "description": "How full the thread's context is, for the client's gauge. Sent once, "
@@ -142,10 +150,10 @@ _CHAT_STREAM_PATH = {
             "Runs the LangGraph agent and streams its reply as `text/event-stream`.\n\n"
             "The body is `data: <json>\\n\\n` frames: first a `ChatConversationIdFrame`, "
             "then a `ChatModelFrame` naming the answering model, then `ChatTextFrame` "
-            "tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, a "
-            "`ChatSuggestionsFrame` with follow-up chips, and finally a `ChatDoneFrame` "
-            "(or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a "
-            "message-length cap."
+            "tokens interleaved with `ChatToolFrame` steps, then a `ChatMessageIdFrame` "
+            "naming the persisted reply, a `ChatUsageFrame`, a `ChatSuggestionsFrame` with "
+            "follow-up chips, and finally a `ChatDoneFrame` (or a `ChatErrorFrame` then "
+            "done). Guarded by a per-IP rate limit and a message-length cap."
         ),
         "requestBody": {
             "required": True,
