@@ -479,9 +479,12 @@ async def chat_stream(request):
         # complete reply that inexplicably stops. The user message is already saved, so
         # the visitor can just re-ask.
         if reply and error is None:
-            await Message.objects.acreate(
+            assistant_message = await Message.objects.acreate(
                 conversation=conversation, role=Message.Role.ASSISTANT, content=reply
             )
+            # Name the persisted reply so the widget can rate it live (thumbs up/down)
+            # without waiting for a reload to learn its id.
+            yield _sse({"message_id": assistant_message.id})
 
         # Persist this turn's consumption (all attempts) so the admin can total tokens
         # per model against the free-tier ceiling. Cumulative, unlike the gauge below.

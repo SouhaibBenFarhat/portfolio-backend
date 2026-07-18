@@ -2449,10 +2449,15 @@ def test_stream_names_the_persisted_assistant_message():
                 content_type="application/json",
             )
             body = await _drain(response)
-        stored = await Message.objects.aget(role="assistant")
+        # Scope to this turn's conversation so a message from any other test can't stand
+        # in for the one we just streamed.
+        stored = await Message.objects.aget(
+            conversation_id=_conversation_id_from(body), role="assistant"
+        )
         return _message_id_from(body), stored.id
 
     frame_id, stored_id = asyncio.run(_run())
+    assert frame_id is not None
     assert frame_id == stored_id
 
 
