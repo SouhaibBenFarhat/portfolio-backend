@@ -75,9 +75,25 @@ _FRAME_SCHEMAS = {
     "ChatUsageFrame": {
         "type": "object",
         "description": "How full the thread's context is, for the client's gauge. Sent once, "
-        "just before the done frame, and omitted when the provider reported no usage.",
+        "once the answer is complete, and omitted when the provider reported no usage.",
         "required": ["usage"],
         "properties": {"usage": {"$ref": "#/components/schemas/ChatUsage"}},
+    },
+    "ChatSuggestionsFrame": {
+        "type": "object",
+        "description": "Follow-up questions the visitor could ask next, rendered as "
+        "tappable chips. Sent once, after the usage frame and just before done; omitted "
+        "when no model actually answered, the thread spent its budget, or nothing usable "
+        "was generated — chips simply don't appear that turn.",
+        "required": ["suggestions"],
+        "properties": {
+            "suggestions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "maxItems": 3,
+                "description": "Up to 3 short questions, in the visitor's voice.",
+            }
+        },
     },
     "ChatErrorFrame": {
         "type": "object",
@@ -126,9 +142,10 @@ _CHAT_STREAM_PATH = {
             "Runs the LangGraph agent and streams its reply as `text/event-stream`.\n\n"
             "The body is `data: <json>\\n\\n` frames: first a `ChatConversationIdFrame`, "
             "then a `ChatModelFrame` naming the answering model, then `ChatTextFrame` "
-            "tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, and "
-            "finally a `ChatDoneFrame` (or a `ChatErrorFrame` then done). Guarded by a "
-            "per-IP rate limit and a message-length cap."
+            "tokens interleaved with `ChatToolFrame` steps, then a `ChatUsageFrame`, a "
+            "`ChatSuggestionsFrame` with follow-up chips, and finally a `ChatDoneFrame` "
+            "(or a `ChatErrorFrame` then done). Guarded by a per-IP rate limit and a "
+            "message-length cap."
         ),
         "requestBody": {
             "required": True,
