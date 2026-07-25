@@ -16,11 +16,32 @@ def test_health_accepts_head_requests():
 
 
 def test_index_describes_service():
-    response = Client().get("/")
+    """The descriptor moved to /api/ when the landing page took the root path."""
+    response = Client().get("/api/")
     assert response.status_code == 200
     body = response.json()
     assert body["service"] == "portfolio-backend"
     assert "/ingest/<path>" in body["endpoints"]["analytics_proxy"]
+
+
+def test_root_serves_the_landing_page():
+    response = Client().get("/")
+    assert response.status_code == 200
+    assert response["Content-Type"].startswith("text/html")
+    body = response.content.decode()
+    assert "hirees" in body
+    # The page must stand alone: no {% static %} dependency, so it renders on a cold
+    # instance with nothing collected.
+    assert "{% static" not in body
+
+
+def test_favicon_uses_the_small_mark_and_the_full_one_is_available():
+    """The tab renders at 16px, so /favicon.svg serves the variant without text lines."""
+    small = Client().get("/favicon.svg").content.decode()
+    full = Client().get("/favicon-full.svg").content.decode()
+    assert small.count("<path") < full.count("<path")
+    assert "linearGradient" not in small  # the old gradient monogram is gone
+    assert "#1f6f78" in small  # the site's petrol accent
 
 
 def test_favicon_is_served_as_svg():

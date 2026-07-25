@@ -6,11 +6,13 @@ info:
     the streaming AI chat assistant (Server-Sent Events). The PostHog analytics proxy
     at /ingest/* is an opaque pass-through and is intentionally not documented here.
 paths:
-  /:
+  /api/:
     get:
-      operationId: root_retrieve
+      operationId: api_retrieve
       description: A small, human-readable JSON descriptor listing the service's endpoints.
       summary: Service descriptor
+      tags:
+      - api
       security:
       - {}
       responses:
@@ -298,6 +300,8 @@ components:
     ServiceEndpoints:
       type: object
       properties:
+        landing:
+          type: string
         health:
           type: string
         docs:
@@ -313,6 +317,7 @@ components:
       - chat_stream
       - docs
       - health
+      - landing
       - schema
     ChatStreamRequest:
       type: object
