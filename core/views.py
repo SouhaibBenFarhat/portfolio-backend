@@ -6,6 +6,7 @@ schema. `favicon` stays a plain Django view — it serves an image, not JSON API
 
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
+from django.templatetags.static import static
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
@@ -92,13 +93,23 @@ def favicon_full(request: HttpRequest) -> HttpResponse:
 def landing(request: HttpRequest) -> HttpResponse:
     """The hirees.me landing page.
 
-    A plain Django view: the template is self-contained (its styles and script are inline)
-    so it carries no static dependencies and renders on a cold instance with nothing
-    collected. This took the root path from the JSON service descriptor, which moved to
-    /api/ — a marketing page belongs at the domain root, and machines can read the
-    descriptor from a path that says it is for machines.
+    A plain Django view: the template's styles and script are inline, so the page itself
+    renders on a cold instance with nothing collected. This took the root path from the
+    JSON service descriptor, which moved to /api/ — a marketing page belongs at the domain
+    root, and machines can read the descriptor from a path that says it is for machines.
+
+    The link-preview URLs are built here rather than hardcoded: Open Graph requires
+    absolute URLs, and this service answers on both hirees.me and onrender.com, so
+    deriving them from the request keeps the card correct on either host.
     """
-    return render(request, "core/landing.html")
+    return render(
+        request,
+        "core/landing.html",
+        {
+            "og_url": request.build_absolute_uri("/"),
+            "og_image": request.build_absolute_uri(static("core/og.png")),
+        },
+    )
 
 
 @extend_schema(
