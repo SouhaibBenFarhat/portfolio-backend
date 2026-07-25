@@ -35,6 +35,18 @@ def test_root_serves_the_landing_page():
     assert "{% static" not in body
 
 
+def test_landing_page_has_absolute_link_preview_urls():
+    """Open Graph requires absolute URLs — a relative og:image renders no card at all."""
+    body = Client().get("/", secure=True).content.decode()
+    assert 'property="og:title"' in body
+    assert 'name="twitter:card" content="summary_large_image"' in body
+    # Both must be absolute, and built from the request so they follow the host.
+    for prop in ("og:url", "og:image"):
+        line = next(ln for ln in body.splitlines() if f'property="{prop}"' in ln)
+        assert 'content="https://' in line, f"{prop} is not absolute: {line.strip()}"
+    assert "og.png" in body  # a raster card: platforms will not render an SVG
+
+
 def test_favicon_uses_the_small_mark_and_the_full_one_is_available():
     """The tab renders at 16px, so /favicon.svg serves the variant without text lines."""
     small = Client().get("/favicon.svg").content.decode()

@@ -6,6 +6,26 @@
 <title>hirees.me — your first interview happens without you</title>
 <meta name="description" content="Someone is reading your CV right now and working from what they can infer. hirees.me gives them somewhere to ask — a portfolio page with an assistant that answers from your own experience, whether or not you're awake.">
 <link rel="icon" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/favicon-full.svg">
+
+<!-- Link previews. og:image must be an absolute URL and a raster format — LinkedIn,
+     Slack and the rest will not render an SVG card, which is why this one is a PNG
+     built at 1200×630 (the size every platform crops from). `{{ og_url }}` and
+     `{{ og_image }}` are absolute, built from the request in core.views.landing, so
+     the same template works on hirees.me and on the onrender.com host. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="hirees.me">
+<meta property="og:title" content="Your first interview happens without you">
+<meta property="og:description" content="A portfolio page with an assistant recruiters can actually ask — it reads your CV, your projects and your notes, and answers in your own words.">
+<meta property="og:url" content="{{ og_url }}">
+<meta property="og:image" content="{{ og_image }}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="hirees.me — your CV, GitHub and facts feeding an assistant that answers a recruiter.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Your first interview happens without you">
+<meta name="twitter:description" content="A portfolio page with an assistant recruiters can actually ask.">
+<meta name="twitter:image" content="{{ og_image }}">
 <style>
 /* ---------------------------------------------------------------------------
    Design tokens — lifted from the portfolio site (src/styles/global.css) so
