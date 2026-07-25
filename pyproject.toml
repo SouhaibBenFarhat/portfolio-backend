@@ -1,6 +1,11 @@
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Ruff 0.16 began formatting Python code blocks embedded in markdown. The docs here are
+# prose — plans/ai-chat-plan.md carries hand-aligned pseudo-code that isn't real source and
+# shouldn't be reflowed — so keep the formatter out of markdown entirely. Excluding by type
+# rather than pinning the ruff version means the next release can't reintroduce this.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
