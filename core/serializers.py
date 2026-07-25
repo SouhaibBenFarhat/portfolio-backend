@@ -13,6 +13,7 @@ class HealthSerializer(serializers.Serializer):
 
 
 class ServiceEndpointsSerializer(serializers.Serializer):
+    landing = serializers.CharField()
     health = serializers.CharField()
     docs = serializers.CharField()
     schema = serializers.CharField()
