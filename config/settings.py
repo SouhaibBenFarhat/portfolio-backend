@@ -51,10 +51,21 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",  # required by allauth (SITE_ID below)
     "corsheaders",
     "rest_framework",
     "drf_spectacular",
     "drf_spectacular_sidecar",  # vendored Swagger UI / Redoc assets (offline, via whitenoise)
+    # Auth / social login. allauth.headless exposes the REST endpoints the dashboard SPA
+    # calls; the provider apps add Google / GitHub / LinkedIn (the last via generic OpenID
+    # Connect — see the auth section below for why).
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
+    "allauth.socialaccount.providers.github",
+    "allauth.socialaccount.providers.openid_connect",
+    "allauth.headless",
     "core",
     "analytics_proxy",
     "chat",
@@ -69,6 +80,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "allauth.account.middleware.AccountMiddleware",  # required by allauth
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -121,6 +133,58 @@ CORS_ALLOWED_ORIGINS = env_list(
     "http://localhost:4321,https://souhaibbenfarhat.github.io",
 )
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
+# The dashboard SPA signs in with credentials (allauth session cookie or token), so
+# cross-origin requests from app.hirees.me must be allowed to carry them.
+CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", default=True)
+
+# --- Authentication / social login (allauth) ------------------------------
+# Users sign in with Google, GitHub, or LinkedIn (self-hosted via django-allauth). The client
+# id/secret for each are managed in the Django admin as *encrypted* OAuthCredential rows (see
+# core.models / core.adapter) — never in settings, env, or allauth's plaintext SocialApp
+# table. See docs/infrastructure.md for how the OAuth apps are registered, and
+# plans/auth-multitenancy-plan.md for the roadmap.
+SITE_ID = 1
+
+# Where allauth redirects the browser after a social round-trip — the dashboard SPA's base.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4321")
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",  # admin / staff login
+    "allauth.account.auth_backends.AuthenticationBackend",  # social + email login
+]
+
+# Social-first: email is the identifier (no username), and social accounts arrive verified
+# so there's no email-confirmation step. New-style allauth 65 settings — the pre-65
+# ACCOUNT_EMAIL_REQUIRED / ACCOUNT_USERNAME_REQUIRED names are deprecated.
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*"]
+ACCOUNT_EMAIL_VERIFICATION = "none"
+SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
+
+# The auth flow is server-rendered for now — a /signin page and an /app dashboard stub, in
+# the site's design — so allauth serves its classic endpoints (provider login/callback and
+# logout) that those pages post to. HEADLESS_ONLY stays False; when the dashboard becomes a
+# separate SPA (Phase 4) it can flip to headless — the /_allauth/ API is already mounted.
+HEADLESS_ONLY = env_bool("HEADLESS_ONLY", default=False)
+HEADLESS_FRONTEND_URLS = {"socialaccount_login_error": f"{FRONTEND_URL}/auth/error"}
+# After sign-in land on the dashboard; @login_required sends anonymous visitors to /signin;
+# after sign-out return to the public landing.
+LOGIN_REDIRECT_URL = "/app"
+LOGIN_URL = "/signin"
+ACCOUNT_LOGOUT_REDIRECT_URL = "/"
+
+
+# Provider-level config (scopes) only. Client credentials do NOT live here — they're the
+# encrypted OAuthCredential rows in the admin, fed to allauth by core.adapter. LinkedIn needs
+# no entry: it's wired through the generic openid_connect provider (callback
+# /accounts/oidc/linkedin/login/callback/, not the dead linkedin_oauth2 one) and its issuer
+# URL travels with its credential row.
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {"SCOPE": ["profile", "email"], "AUTH_PARAMS": {"access_type": "online"}},
+    "github": {"SCOPE": ["read:user", "user:email"]},
+}
+# Feed allauth its apps from the encrypted OAuthCredential model rather than env/plaintext.
+SOCIALACCOUNT_ADAPTER = "core.adapter.SocialAccountAdapter"
 
 # --- AI chat --------------------------------------------------------------
 # LiteLLM model ids. The chat tries CHAT_MODEL first; if it fails (e.g. a free-tier

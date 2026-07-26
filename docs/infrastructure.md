@@ -136,6 +136,12 @@ dashboard and is never committed. Don't try to rotate them.
 | --- | --- | --- | --- |
 | CNAME | `@` (apex, = `hirees.me`) | `portfolio-backend-2huw.onrender.com` | DNS only |
 | CNAME | `www` | `portfolio-backend-2huw.onrender.com` | DNS only |
+| CNAME | `api` | `portfolio-backend-2huw.onrender.com` | DNS only |
+
+`api.hirees.me` was added on **2026-07-26** as the backend's public API hostname (social
+sign-in callbacks land here — see `docs/auth.md`). It's a Render **Custom Domain**
+(Settings → Custom Domains) alongside the apex and `www`; status after setup: **Verified**,
+certificate issuing. Kept **DNS only** for the same reason as the others (Gotcha #1).
 
 A `CNAME` at the apex is normally illegal in DNS; Cloudflare allows it via **CNAME
 flattening**, which is why no `A` record is needed. If a host ever requires a literal

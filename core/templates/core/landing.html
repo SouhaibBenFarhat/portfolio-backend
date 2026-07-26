@@ -165,16 +165,16 @@ header {
 .wordmark .tld { color: var(--accent); }
 .logo { width: 1.375rem; height: 1.375rem; flex: none; color: var(--accent); }
 
-/* ---- Buttons — pill, hairline, lift on hover (no glow) ------------------- */
+/* ---- Buttons — rounded, hairline, lift on hover (no glow) ---------------- */
 .btn, .btn-solid {
   display: inline-flex; align-items: center; gap: .5rem;
-  border-radius: 999px;
+  border-radius: 8px;
   padding: .625rem 1.25rem;
   font-size: .875rem; font-weight: 500;
   transition: all .3s var(--ease);
   cursor: pointer;
   font-family: inherit;
-  white-space: nowrap;  /* a pill CTA must never wrap to a second line */
+  white-space: nowrap;  /* a CTA must never wrap to a second line */
 }
 /* Secondary button: an elevated surface, not a ghost outline. It used to be
    background:none with a hairline, so on the page plane it dissolved into the
@@ -320,6 +320,19 @@ h1 em { font-style: normal; color: var(--accent); }
 @media (min-width: 768px) { .lede { font-size: 1.0625rem; } }
 
 .hero-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.25rem; }
+/* The one-click sign-in form is layout-transparent, so its button aligns in the actions
+   row exactly like the sibling link-button beside it. */
+.hero-actions form { display: contents; }
+/* "Continue with Google" — the accent primary, with the real multicolour G held in a white
+   chip so it stays recognisable and legible on the teal fill (a bare colour G on teal muds
+   together). The chip keeps the button on-brand while the mark stays Google's. */
+.btn-google { padding-left: .5rem; }
+.btn-google .g-chip { width: 1.5rem; height: 1.5rem; flex: none; border-radius: 7px; background: #fff; display: grid; place-items: center; }
+.btn-google .g-chip svg { width: 1rem; height: 1rem; display: block; }
+/* The quiet fallback to the full sign-in page (GitHub / LinkedIn). */
+.hero-more { margin-top: .75rem; font-size: .875rem; color: var(--muted); }
+.hero-more a { color: var(--accent); font-weight: 500; }
+.hero-more a:hover { text-decoration: underline; }
 
 /* Fade-and-rise for everything below the headline, keyed off the same stagger */
 .enter { opacity: 0; animation: enter .85s var(--ease) forwards; }
@@ -826,9 +839,12 @@ h1 em { font-style: normal; color: var(--accent); }
   box-shadow: var(--shadow-md);
   border-top-left-radius: 4px;
 }
+/* Outlined in an accent shade, not a solid accent fill: a loud filled bubble in the demo
+   pulled attention away from the hero's Google button, which is the thing that matters. */
 .r-bubble.user {
-  background: var(--accent); color: var(--on-accent);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
   border-top-right-radius: 4px;
 }
 
@@ -1341,7 +1357,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
           <path d="M20.5 14.8A8.6 8.6 0 019.2 3.5a8.6 8.6 0 1011.3 11.3z"/>
         </svg>
       </button>
-      <a href="#start" class="btn">Create your page</a>
+      <a href="/signin" class="btn">Create your page</a>
     </div>
   </div>
 </header>
@@ -1366,9 +1382,23 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
     </p>
 
     <div class="hero-actions enter d2">
-      <a href="#start" class="btn-solid">Claim your page</a>
+      <form {% if google_configured %}method="post" action="{{ google_login_url }}?process=login"{% else %}method="get" action="/signin"{% endif %}>
+        {% if google_configured %}{% csrf_token %}{% else %}<input type="hidden" name="unavailable" value="Google">{% endif %}
+        <button type="submit" class="btn-solid btn-google">
+          <span class="g-chip" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.2a5.3 5.3 0 0 1-2.3 3.48v2.9h3.72c2.18-2.01 3.44-4.98 3.44-8.39z"/>
+              <path fill="#34A853" d="M12 24c3.1 0 5.71-1.02 7.61-2.78l-3.72-2.9c-1.03.7-2.36 1.1-3.89 1.1-2.98 0-5.5-2.01-6.4-4.71H1.75v2.98A11.99 11.99 0 0 0 12 24z"/>
+              <path fill="#FBBC05" d="M5.6 14.71a7.2 7.2 0 0 1 0-4.61V7.12H1.75a12 12 0 0 0 0 10.57z"/>
+              <path fill="#EA4335" d="M12 4.77c1.68 0 3.19.58 4.38 1.71l3.28-3.28C17.7 1.19 15.1 0 12 0 7.31 0 3.26 2.69 1.75 6.62L5.6 9.6C6.5 6.9 9.02 4.77 12 4.77z"/>
+            </svg>
+          </span>
+          Continue with Google
+        </button>
+      </form>
       <a href="#how" class="btn">See how it works</a>
     </div>
+    <p class="hero-more enter d2">Prefer GitHub or LinkedIn? <a href="/signin">More sign-in options</a></p>
     </div><!-- /.hero-copy -->
 
     <!-- Only the screen moves up here, into the hero's right, filling the empty space; a
@@ -1842,7 +1872,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
       answers for you, in about a minute.
     </p>
     <div class="hero-actions reveal">
-      <a href="#start" class="btn-solid">Claim your page</a>
+      <a href="/signin" class="btn-solid">Claim your page</a>
     </div>
   </div>
 </section>

@@ -1,10 +1,13 @@
-"""Re-register the auth User/Group admins with the Unfold theme.
+"""Admin for the core app: the themed auth User/Group, and the encrypted social-login apps.
 
-django.contrib.auth registers them with plain ModelAdmins, which would render as
-the one unstyled corner of the themed admin. Unfold's forms are needed too — the
-stock user forms carry widgets the theme's styles don't reach.
+django.contrib.auth registers User/Group with plain ModelAdmins, which would render as the
+one unstyled corner of the themed admin, so they're re-registered with Unfold. The
+OAuthCredential admin manages social-login client credentials with the secret encrypted at
+rest; allauth's own plaintext SocialApp admin is hidden so credentials only ever go through
+the encrypted path.
 """
 
+from allauth.socialaccount.models import SocialApp
 from django.contrib import admin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -12,8 +15,18 @@ from django.contrib.auth.models import Group, User
 from unfold.admin import ModelAdmin
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
+from .models import OAuthCredential
+
 admin.site.unregister(User)
 admin.site.unregister(Group)
+
+# Social-login apps are managed as encrypted OAuthCredential rows, so hide allauth's own
+# SocialApp admin: a row added there would store the secret in plaintext and collide with
+# ours (allauth allows only one app per provider). Guarded in case it isn't registered.
+try:
+    admin.site.unregister(SocialApp)
+except admin.sites.NotRegistered:
+    pass
 
 
 @admin.register(User)
@@ -26,3 +39,35 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 @admin.register(Group)
 class GroupAdmin(BaseGroupAdmin, ModelAdmin):
     pass
+
+
+@admin.register(OAuthCredential)
+class OAuthCredentialAdmin(ModelAdmin):
+    """Social-login client credentials, secret encrypted at rest (core.models). One row per
+    provider; add the client id and secret from the provider's developer console."""
+
+    list_display = (
+        "__str__",
+        "provider",
+        "provider_id",
+        "masked_secret",
+        "is_active",
+        "updated_at",
+    )
+    list_filter = ("provider", "is_active")
+    list_editable = ("is_active",)
+    search_fields = ("name", "provider", "provider_id", "client_id")
+    fields = (
+        "provider",
+        "provider_id",
+        "name",
+        "client_id",
+        "secret",
+        "server_url",
+        "is_active",
+    )
+
+    @admin.display(description="secret")
+    def masked_secret(self, obj):
+        secret = obj.secret or ""
+        return f"…{secret[-4:]}" if len(secret) >= 4 else "····"

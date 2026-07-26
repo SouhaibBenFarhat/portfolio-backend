@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import favicon, favicon_full, health, index, landing
+from core.views import dashboard, favicon, favicon_full, health, index, landing, signin
 
 urlpatterns = [
     # The landing page owns the root; the JSON service descriptor moved to /api/.
@@ -15,9 +15,16 @@ urlpatterns = [
     path("favicon.svg", favicon),
     path("favicon.ico", favicon),  # browsers request this by default
     path("favicon-full.svg", favicon_full),  # the detailed mark, for app icons and avatars
+    path("signin", signin, name="signin"),  # social sign-in / sign-up (the CTAs land here)
+    path("app", dashboard, name="dashboard"),  # signed-in landing (stub; login required)
     path("admin/", admin.site.urls),
     path("ingest/", include("analytics_proxy.urls")),
     path("chat/", include("chat.urls")),
+    # Auth: allauth's provider callback endpoints (/accounts/<provider>/login/callback/,
+    # which the registered OAuth apps point at) and the headless REST API the dashboard SPA
+    # drives sign-in through (/_allauth/…).
+    path("accounts/", include("allauth.urls")),
+    path("_allauth/", include("allauth.headless.urls")),
     # OpenAPI schema (machine) + Swagger UI (human). The schema also feeds the
     # frontend's type generation.
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
