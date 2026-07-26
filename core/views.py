@@ -4,15 +4,49 @@
 schema. `favicon` stays a plain Django view — it serves an image, not JSON API.
 """
 
+from allauth.socialaccount.adapter import get_adapter
+from django.conf import settings
+from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.templatetags.static import static
+from django.urls import reverse
 from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from .serializers import HealthSerializer, ServiceDescriptorSerializer
+
+# The social providers the sign-in page offers, in display order, each with the allauth URL
+# name that starts its OAuth flow. All three are always shown (they're the product's whole
+# offering); a provider with no credential configured still renders, but its button routes to
+# a friendly "not set up yet" notice instead of erroring — see signin(). LinkedIn rides on the
+# generic OpenID Connect provider (its classic OAuth2 API is dead), so its route is the
+# parametrised openid_connect one.
+_SIGNIN_PROVIDERS = [
+    {"id": "google", "name": "Google", "url_name": "google_login", "url_kwargs": {}},
+    {"id": "github", "name": "GitHub", "url_name": "github_login", "url_kwargs": {}},
+    {
+        "id": "linkedin",
+        "name": "LinkedIn",
+        "url_name": "openid_connect_login",
+        "url_kwargs": {"provider_id": "linkedin"},
+    },
+]
+
+
+def _configured_provider_ids(request) -> set:
+    """Provider ids with an active credential, so a click can actually complete a login.
+    One pass through allauth's adapter (our encrypted-credential one), so it agrees exactly
+    with what happens on submit — an unconfigured provider is shown but routed to a notice."""
+    present = set()
+    for app in get_adapter(request).list_apps(request):
+        present.add(app.provider)
+        if app.provider_id:
+            present.add(app.provider_id)
+    return {p["id"] for p in _SIGNIN_PROVIDERS if p["id"] in present}
+
 
 # The hirees.me mark: a CV with a brain badged into its corner — a document that thinks.
 # Composed from two Lucide icons (file-text + brain, ISC licensed, https://lucide.dev),
@@ -108,8 +142,57 @@ def landing(request: HttpRequest) -> HttpResponse:
         {
             "og_url": request.build_absolute_uri("/"),
             "og_image": request.build_absolute_uri(static("core/og.png")),
+            # One-click sign-in in the hero: Google is the fast path (most visitors have an
+            # account, one tap), with a "more options" link to the full /signin page for the
+            # rest. reverse() so the route stays correct if it ever moves.
+            "google_login_url": reverse("google_login"),
+            # When Google has no credential, the hero button routes to the friendly notice
+            # instead of erroring (same graceful handling as /signin).
+            "google_configured": "google" in _configured_provider_ids(request),
         },
     )
+
+
+def signin(request: HttpRequest) -> HttpResponse:
+    """The sign-in / sign-up page.
+
+    Social login unifies the two: the first time someone continues with a provider their
+    account is created; after that the same button signs them in. Server-rendered in the
+    landing page's design so the whole entry flow reads as one product — the authenticated
+    dashboard is a separate SPA (see plans/auth-multitenancy-plan.md).
+
+    All three providers are shown; a configured one's button posts to the allauth URL that
+    starts its OAuth flow, while an unconfigured one's button routes back here with
+    ?unavailable= so a click shows a friendly "not set up yet" notice instead of dead-ending.
+    An already-authenticated visitor is sent straight on.
+    """
+    if request.user.is_authenticated:
+        return redirect(settings.LOGIN_REDIRECT_URL)
+    configured = _configured_provider_ids(request)
+    providers = [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "login_url": reverse(p["url_name"], kwargs=p["url_kwargs"]),
+            "configured": p["id"] in configured,
+        }
+        for p in _SIGNIN_PROVIDERS
+    ]
+    # A provider the visitor tried that isn't set up. Validated against the known names so the
+    # notice can never render arbitrary injected text.
+    requested = request.GET.get("unavailable", "")
+    unavailable = requested if requested in {p["name"] for p in _SIGNIN_PROVIDERS} else ""
+    return render(request, "core/signin.html", {"providers": providers, "unavailable": unavailable})
+
+
+@login_required
+def dashboard(request: HttpRequest) -> HttpResponse:
+    """The signed-in landing — a stub for now, so sign-in has a real destination while the
+    full dashboard (upload a CV, manage facts, share the page) is built out. @login_required
+    sends anonymous visitors to settings.LOGIN_URL (/signin). The whole point of this stub is
+    to close the loop: sign in → land here → sign out, all testable end to end today.
+    """
+    return render(request, "core/dashboard.html")
 
 
 @extend_schema(
