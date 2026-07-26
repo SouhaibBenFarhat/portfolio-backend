@@ -296,3 +296,13 @@ def test_dashboard_greets_the_user_and_offers_sign_out():
     assert "jo@example.com" in body
     assert 'action="/accounts/logout/"' in body  # the sign-out form
     assert "csrfmiddlewaretoken" in body
+
+
+def test_social_signup_does_not_require_email_so_github_never_stalls():
+    """GitHub returns no email for private-email users; requiring one would strand them on
+    allauth's default signup page. These settings keep social sign-in auto-completing to /app
+    (the address is still captured when the provider supplies it)."""
+    from django.conf import settings
+
+    assert settings.SOCIALACCOUNT_EMAIL_REQUIRED is False
+    assert settings.SOCIALACCOUNT_AUTO_SIGNUP is True

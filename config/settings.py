@@ -160,6 +160,13 @@ ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*"]
 ACCOUNT_EMAIL_VERIFICATION = "none"
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
+# GitHub returns no email for users whose email is private; a required email would then stall
+# them on allauth's default "complete signup" page instead of landing on /app. Don't require
+# email for social sign-in — auto-create the account from whatever the provider gives (allauth
+# still pulls the address from GitHub's /user/emails when the user:email scope grants it), so
+# the flow completes straight through. (Phase 2, multi-tenancy, revisits email as identifier.)
+SOCIALACCOUNT_EMAIL_REQUIRED = False
+SOCIALACCOUNT_AUTO_SIGNUP = True
 
 # The auth flow is server-rendered for now — a /signin page and an /app dashboard stub, in
 # the site's design — so allauth serves its classic endpoints (provider login/callback and
