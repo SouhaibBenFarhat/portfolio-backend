@@ -167,6 +167,14 @@ SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
 # the flow completes straight through. (Phase 2, multi-tenancy, revisits email as identifier.)
 SOCIALACCOUNT_EMAIL_REQUIRED = False
 SOCIALACCOUNT_AUTO_SIGNUP = True
+# A visitor may already have an account with the same email (the owner's own login is the
+# obvious case) — without this, allauth stops on the signup page instead of signing them in.
+# Let a provider-**verified** email authenticate into, and auto-connect to, the matching
+# account, so every provider lands the same person on /app. Only verified emails qualify,
+# which is what makes this acceptable; the broader linking policy — and never auto-granting
+# is_staff to social users — is tracked in docs/auth.md for Phase 2.
+SOCIALACCOUNT_EMAIL_AUTHENTICATION = True
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
 
 # The auth flow is server-rendered for now — a /signin page and an /app dashboard stub, in
 # the site's design — so allauth serves its classic endpoints (provider login/callback and
