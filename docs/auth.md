@@ -55,13 +55,16 @@ reason as Mistral). Config is env-driven (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE
 `.env.example`). **With `EMAIL_HOST` unset the app uses Django's console backend** — the code
 prints to the server log, so the whole flow is testable locally with nothing sent.
 
-Deliverability is DNS-dependent: Brevo authenticates hirees.me via a branded subdomain
-(`mail.hirees.me`) plus DKIM (×2), a return-path, a `brevo-code` ownership TXT, and a DMARC
-record on Cloudflare — **the exact seven records are in `docs/infrastructure.md` → "Email
-deliverability (Brevo)"**. Every CNAME must be grey-cloud / **DNS only**, or DKIM silently breaks.
-Owner setup before production email sign-up works: create the Brevo account, add those records,
-click **Authenticate domain** in Brevo, and set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (the
-Brevo SMTP key) in Render.
+Deliverability runs off a branded subdomain (`mail.hirees.me`) plus DKIM (×2), a return-path, a
+`brevo-code` ownership TXT, and a DMARC record on Cloudflare — **the seven records, and how they
+were added (via the Cloudflare API, not the flaky dashboard), are in `docs/infrastructure.md` →
+"Email deliverability (Brevo)"**. Every CNAME is grey-cloud / **DNS only** (a proxied DKIM CNAME
+silently breaks signing). Those records are live and **Brevo reports the domain authenticated
+(2026-07-26)**.
+
+The one remaining owner step for production email: set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD`
+(the Brevo SMTP key, from Brevo → *SMTP & API*) in Render. Until then the app falls back to the
+console backend, so email sign-up can't send in production — social login is unaffected.
 
 ## Credentials live in the admin, encrypted
 

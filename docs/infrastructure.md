@@ -164,9 +164,9 @@ Transactional mail — the email-verification code and password-reset links (see
 is sent through **Brevo** (EU, free tier, 300/day). A branded subdomain **`mail.hirees.me`**
 replaces Brevo's default `brevo-link.com` links, so mail is DKIM-signed as hirees.me.
 
-Authenticating the domain in Brevo needs these **seven** Cloudflare records. Every CNAME must be
-**DNS only (grey cloud)** — a proxied DKIM/return-path CNAME silently breaks signing. Paste the
-two TXT values whole (Brevo's UI shows them truncated):
+These **seven** Cloudflare records authenticate the domain — **added 2026-07-26, all DNS-only, and
+Brevo reports hirees.me authenticated**. Every CNAME must be **DNS only (grey cloud)**; a proxied
+DKIM/return-path CNAME silently breaks signing.
 
 | Type | Name | Target / Content | Proxy |
 | --- | --- | --- | --- |
@@ -184,11 +184,26 @@ The `@` `brevo-code` TXT is the ownership check; `_dmarc` is `p=none` (monitor-o
 `quarantine`/`reject` later, once mail is confirmed aligned. (`mail` is on the reserved-slug list
 below, so a tenant can never claim it.)
 
-**Steps:** add the seven records in Cloudflare → in Brevo (*Senders, Domains & IPs → Domains →
-hirees.me*) hit **Verify records** then **Authenticate domain** → set `EMAIL_HOST_USER` /
-`EMAIL_HOST_PASSWORD` (the Brevo SMTP key, *SMTP & API*) in Render. Until the domain is
-authenticated, email sign-up can't send (social login is unaffected). Propagation can take up to
-48h but Cloudflare is usually minutes.
+**Add records via the API, not the dashboard.** Cloudflare's *Add record* modal renders
+unreliably (it glitched blank and dismissed itself mid-entry), so these were created through the
+**Cloudflare API** with a scoped *Edit zone DNS* token — the reliable path, and how to add any
+future record. `proxied:false` is grey-cloud/DNS-only; omit `proxied` for TXT:
+
+```bash
+ZONE=5596becd0f0c932bdebd05de9784efa8   # hirees.me zone id
+curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE/dns_records" \
+  -H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json" \
+  --data '{"type":"CNAME","name":"brevo1._domainkey","content":"b1.hirees-me.dkim.brevo.com","proxied":false,"ttl":1}'
+```
+
+`_domainkey` CNAMEs default to DNS-only already; `mail`/`img.mail`/`r.mail` default to Proxied in
+the dashboard and must be flipped (the API sets it explicitly). **Delete the token afterwards** —
+it's a live credential.
+
+**Status:** records added → Brevo *Authenticate domain* succeeded (propagation was instant, not
+the 48h worst case). **Remaining owner step:** set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (the
+Brevo SMTP key, *SMTP & API*) in Render. Until those are set the app uses the console backend and
+email sign-up can't send in production; social login is unaffected.
 
 ### Django
 
