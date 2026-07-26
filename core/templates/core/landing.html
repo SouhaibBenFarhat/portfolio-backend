@@ -626,6 +626,15 @@ h1 em { font-style: normal; color: var(--accent); }
 /* Masthead — the single strongest "this is a CV" cue: a big name, the role and a contact
    line beneath, and a rule under the lot. */
 .cv-head { padding-bottom: .75rem; margin-bottom: .375rem; border-bottom: 1.5px solid var(--line); }
+/* A headshot placeholder — the person silhouette on a soft disc reads as a CV photo. */
+.cv-photo {
+  width: 2.75rem; height: 2.75rem; margin-bottom: .5rem;
+  border-radius: 999px; overflow: hidden;
+  background: color-mix(in srgb, var(--line), var(--surface) 35%);
+  border: 1px solid var(--line);
+  display: grid; place-items: center; color: var(--muted);
+}
+.cv-photo svg { width: 2.75rem; height: 2.75rem; }
 .cv-name { display: block; font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
 .cv-role { display: block; margin-top: .125rem; font-size: .75rem; color: var(--text); }
 .cv-contact { display: block; margin-top: .25rem; font-size: .625rem; color: var(--muted); }
@@ -1369,6 +1378,9 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
             <div class="cv-pane">
               <div class="cv-page">
               <div class="cv-head">
+                <span class="cv-photo">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 12a5 5 0 100-10 5 5 0 000 10zm0 2c-5.33 0-8 2.67-8 6v2h16v-2c0-3.33-2.67-6-8-6z"/></svg>
+                </span>
                 <span class="cv-name">Maya Lindqvist</span>
                 <span class="cv-role">Senior Platform Engineer</span>
                 <span class="cv-contact">maya@hey.com · Berlin</span>
