@@ -47,13 +47,22 @@ name, so it can't be turned into reflected text).
 Each provider needs an app on its own developer console. Client **secrets are in the owner's
 password manager** and entered into the admin; only identifiers and callbacks are recorded here.
 
-Production callback is `https://api.hirees.me/accounts/<provider>/login/callback/`, with a
-`http://localhost:8000/...` callback alongside for local dev (except GitHub — see below).
+**Callbacks must match the exact host the visitor is on.** allauth builds the redirect URI
+from the request host, and each provider only allows pre-registered redirect URLs — a
+mismatch is the `redirect_uri_mismatch` / "not associated with this application" error. The
+app is served from the **apex `hirees.me`** (not `api.hirees.me` — an early wrong assumption;
+`www.hirees.me` just redirects to the apex), so the production callback is
+`https://hirees.me/accounts/<provider>/login/callback/`, with `http://localhost:8000/...`
+alongside for local dev (except GitHub — see below). Register every host the app is reached
+on (`hirees.me`, and `localhost` for dev); `127.0.0.1` counts as a different host from
+`localhost`.
 
 - **GitHub** — <github.com/settings/developers>, app `hirees.me`, callback
-  `.../accounts/github/login/callback/`. **Gotcha:** a GitHub OAuth App allows only **one**
-  callback URL, so for local dev register a second `hirees.me (dev)` app pointing at localhost.
-  (Distinct from the `GITHUB_TOKEN` the chat's repo tools use — a different credential.)
+  `https://hirees.me/accounts/github/login/callback/`. **Gotcha:** a GitHub **OAuth App** allows
+  only **one** callback URL (unlike Google/LinkedIn, which take several), so it can't cover prod
+  *and* localhost at once — use a separate OAuth App per environment (or a GitHub *App*, which
+  allows multiple). GitHub thus can't be tested on localhost while the one callback points at
+  prod. (Distinct from the `GITHUB_TOKEN` the chat's repo tools use — a different credential.)
 - **Google** — Google Cloud Console, project `hirees`; consent screen audience **External**;
   OAuth client type **Web application**; both the production and localhost redirect URIs on the
   one client. Callback `.../accounts/google/login/callback/`.
@@ -65,6 +74,18 @@ Production callback is `https://api.hirees.me/accounts/<provider>/login/callback
   Connect product doesn't grant. So the callback is `/accounts/oidc/linkedin/login/callback/`,
   and the LinkedIn redirect URLs **must** use that `oidc/linkedin` path (prod + localhost) or
   sign-in returns a `redirect_uri` mismatch.
+
+## Account linking — a sharp edge to tighten before public launch
+
+allauth links a social login to an **existing account with the same email**. That's why the
+owner signing in with LinkedIn lands on their existing Django **superuser** account and can
+reach `/admin` — expected for the owner, but a **security risk in general**: if a provider
+ever returns an email the account owner never verified, an attacker could take over a matching
+account. A brand-new email just creates a plain user (`is_staff=False`, no `/admin`).
+
+Before sign-in is public (Phase 2), tighten this: require provider-verified emails for linking,
+or disable auto-link entirely (`SOCIALACCOUNT_EMAIL_AUTHENTICATION` / a custom adapter), and
+never auto-grant `is_staff`.
 
 ## Session strategy — the app/api subdomain split (open decision)
 
