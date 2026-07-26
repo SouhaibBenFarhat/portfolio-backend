@@ -1,16 +1,27 @@
 {% extends "allauth/layouts/base.html" %}
-{% comment %}Email + password registration. On submit, allauth emails a verification code and
-routes to confirm_email_verification_code.html — the account isn't usable until the code is
-entered (ACCOUNT_EMAIL_VERIFICATION="mandatory").{% endcomment %}
+{% load auth_extras %}
+{% comment %}Email + password registration, with social buttons too (someone may open this link
+directly). On submit, allauth emails a verification code and routes to the code page — the
+account isn't usable until the code is entered.{% endcomment %}
 {% block head_title %}Create your account{% endblock %}
+{% block page_layout %}split{% endblock %}
+{% block aside %}{% include "partials/_market_signup.html" %}{% endblock %}
 {% block content %}
-  <h1>Create your account</h1>
-  <p>Already have one? <a href="{% url 'account_login' %}">Sign in</a>.</p>
-  <form method="post" action="{% url 'account_signup' %}">
+  <div class="auth-head">
+    <h1 class="auth-title">Create your account</h1>
+    <p class="auth-sub">Already have one? <a href="{% url 'account_login' %}">Sign in</a>.</p>
+  </div>
+
+  {% social_buttons %}
+
+  <div class="divider"><span>or with email</span></div>
+
+  <form class="auth-form" method="post" action="{% url 'account_signup' %}">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% include "partials/_fields.html" %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
-    <button type="submit">Create account</button>
+    <button class="btn" type="submit">Create account</button>
   </form>
-  <p class="foot">We'll email you a code to confirm your address before you're signed in.</p>
+
+  <p class="auth-fine">We'll email you a code to confirm your address before you're signed in.</p>
 {% endblock %}

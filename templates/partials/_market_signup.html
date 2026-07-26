@@ -1,0 +1,14 @@
+{% comment %}
+Marketing panel for the SIGN-UP split layout — new visitors need to understand the product.
+The text is the landing page's demo intro; the screen below is the landing hero's own CV +
+assistant mockup, reused verbatim as a static frame (see partials/_demo_screen.html). Styled by
+the .market* rules in site_base.html.
+{% endcomment %}
+<aside class="market">
+  <div class="market-inner">
+    <p class="market-eyebrow">The other side of the screen</p>
+    <h2 class="market-title">Every question they didn't get to ask you.</h2>
+    <p class="market-lede">Not a chatbot bolted onto a template. It reads your CV and the details you add, says only what it can source, and shows its work as it goes.</p>
+    {% include "partials/_demo_screen.html" %}
+  </div>
+</aside>
