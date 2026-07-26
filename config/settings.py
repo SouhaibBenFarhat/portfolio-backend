@@ -90,7 +90,7 @@ ASGI_APPLICATION = "config.asgi.application"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],  # project-level overrides (searched before app dirs)
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
