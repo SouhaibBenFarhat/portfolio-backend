@@ -49,8 +49,10 @@ form { margin-top: 1.75rem; text-align: left; }
 form p { margin: 0 0 1rem; display: flex; flex-direction: column; gap: .375rem; }
 form label { font-size: .8125rem; font-weight: 500; color: var(--muted); }
 form input { width: 100%; font-family: inherit; font-size: .9375rem; color: var(--text); background: var(--bg); border: 1px solid var(--raised-line); border-radius: 8px; padding: .625rem .75rem; }
-form .helptext, form .errorlist { font-size: .75rem; color: var(--muted); list-style: none; padding: 0; margin: 0; }
-form .errorlist { color: #c0392b; }
+form .helptext { font-size: .75rem; color: var(--muted); }
+form .errorlist, .errorlist { list-style: none; margin: 0 0 1rem; padding: .75rem .875rem; border-radius: 8px; background: color-mix(in srgb, #e5484d 10%, var(--surface)); border: 1px solid color-mix(in srgb, #e5484d 32%, var(--line)); color: #ce2c31; font-size: .8125rem; line-height: 1.5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .errorlist { color: #ff9592; } }
+:root[data-theme="dark"] .errorlist { color: #ff9592; }
 
 .btn { width: 100%; margin-top: .5rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 8px; padding: .8125rem 1rem; font-family: inherit; font-size: .9375rem; font-weight: 500; cursor: pointer; background: var(--accent); color: var(--on-accent); transition: transform .2s var(--ease), filter .2s var(--ease); }
 .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
