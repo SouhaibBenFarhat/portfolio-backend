@@ -1,15 +1,26 @@
 {% extends "allauth/layouts/base.html" %}
-{% comment %}Email + password sign-in, in the site's design (the themed allauth base supplies the
-card + form styling). Social sign-in lives on /signin.{% endcomment %}
+{% load auth_extras %}
+{% comment %}Email + password sign-in, with social buttons too. The branded /signin hub is the
+usual entry; this is allauth's own login page (where it redirects internally / direct links).{% endcomment %}
 {% block head_title %}Sign in{% endblock %}
+{% block page_layout %}split{% endblock %}
+{% block aside %}{% include "partials/_market_signin.html" %}{% endblock %}
 {% block content %}
-  <h1>Sign in</h1>
-  <p>New to hirees.me? <a href="{% url 'account_signup' %}">Create an account</a>.</p>
-  <form method="post" action="{% url 'account_login' %}">
+  <div class="auth-head">
+    <h1 class="auth-title">Sign in</h1>
+    <p class="auth-sub">New to hirees.me? <a href="{% url 'account_signup' %}">Create an account</a>.</p>
+  </div>
+
+  {% social_buttons %}
+
+  <div class="divider"><span>or with email</span></div>
+
+  <form class="auth-form" method="post" action="{% url 'account_login' %}">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% include "partials/_fields.html" %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
-    <button type="submit">Sign in</button>
+    <button class="btn" type="submit">Sign in</button>
   </form>
-  <p class="foot"><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
+
+  <p class="auth-alt"><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
 {% endblock %}

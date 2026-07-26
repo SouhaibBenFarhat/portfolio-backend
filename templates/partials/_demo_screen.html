@@ -1,0 +1,283 @@
+{% comment %}
+The landing hero's "screen" — browser chrome + the CV pane + the assistant chat — reused for the
+sign-up marketing panel. HTML, CSS and the chat animation are lifted from
+core/templates/core/landing.html's hero (.stage-screen → .screen + its conversation() script):
+the recruiter's question types itself into the composer, the agent's tool timeline spins then
+ticks, the sourced answer streams in, and it loops. The desk/keyboard are dropped (the script
+tolerates their absence); everything else is verbatim. Keyframes/ids are unique to this
+component, so it drops onto the auth pages without colliding with their styles.
+{% endcomment %}
+<style>
+.demo-screen { margin-top: 2rem; width: 100%; }
+.demo-screen .lid { width: 100%; background: color-mix(in srgb, var(--line), var(--text) 10%); border-radius: 12px 12px 5px 5px; padding: .5rem .5rem .55rem; box-shadow: var(--shadow-lg); }
+.demo-screen .screen { border-radius: 6px; overflow: hidden; background: var(--surface); }
+.demo-screen .screen .tabstrip { padding: .3125rem .4375rem 0; }
+.demo-screen .screen .toolbar { padding: .3125rem .5rem; }
+.demo-screen .screen .omnibox { padding: .1875rem .5rem; }
+.demo-screen .chrome { border-bottom: 1px solid var(--line); background: var(--bg); box-shadow: var(--shadow-md); position: relative; z-index: 1; }
+.demo-screen .tabstrip { display: flex; align-items: flex-end; gap: .375rem; padding: .375rem .5rem 0; }
+.demo-screen .dots { display: flex; gap: .375rem; align-self: center; padding: 0 .25rem .3125rem 0; flex: none; }
+.demo-screen .dots i { width: .5rem; height: .5rem; border-radius: 999px; background: color-mix(in srgb, var(--line) 70%, var(--muted)); }
+.demo-screen .tab { display: inline-flex; align-items: center; gap: .375rem; min-width: 0; max-width: 12rem; background: var(--raised); border: 1px solid var(--line); border-bottom-color: var(--raised); border-radius: 8px 8px 0 0; margin-bottom: -1px; padding: .3125rem .5rem; font-size: .6875rem; color: var(--text); }
+.demo-screen .tab-fav { width: .8125rem; height: .8125rem; flex: none; color: var(--accent); }
+.demo-screen .tab-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-screen .tab-x { width: .6875rem; height: .6875rem; flex: none; color: var(--muted); }
+.demo-screen .newtab { width: .9375rem; height: .9375rem; flex: none; color: var(--muted); margin-bottom: .3125rem; }
+.demo-screen .toolbar { display: flex; align-items: center; gap: .5rem; padding: .375rem .625rem; background: var(--raised); }
+.demo-screen .navs { display: flex; align-items: center; gap: .3125rem; color: var(--muted); flex: none; }
+.demo-screen .navs svg { width: .9375rem; height: .9375rem; }
+.demo-screen .omnibox { flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem; font-size: .75rem; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: .25rem .625rem; }
+.demo-screen .menu { width: .875rem; height: .875rem; flex: none; color: var(--muted); }
+.demo-screen .lock { width: .625rem; height: .625rem; flex: none; opacity: .55; }
+.demo-screen .addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.demo-screen .addr b { color: var(--accent); font-weight: 600; }
+.demo-screen .live-tag { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .3125rem; font-size: .5625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.demo-screen .live-dot { width: .375rem; height: .375rem; border-radius: 999px; background: var(--accent); animation: dsPulse 2.2s ease-out infinite; }
+@keyframes dsPulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); } 70% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); } }
+.demo-screen .screen-panes { display: grid; grid-template-columns: 1.35fr 0.85fr; grid-template-rows: minmax(0, 1fr); height: 24rem; }
+.demo-screen .cv-pane { padding: 1rem; border-right: 1px solid var(--line); min-height: 0; overflow-y: auto; overflow-x: hidden; background: color-mix(in srgb, var(--surface), #000 16%); scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.demo-screen .cv-pane::-webkit-scrollbar { width: 5px; }
+.demo-screen .cv-pane::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+.demo-screen .cv-page { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 6px 16px rgba(0,0,0,.12); padding: 1.125rem 1.0625rem; }
+.demo-screen .cv-head { display: flex; align-items: center; gap: .8125rem; padding-bottom: .75rem; margin-bottom: .375rem; border-bottom: 1.5px solid var(--line); }
+.demo-screen .cv-avatar { flex: none; width: 3.25rem; height: 3.25rem; border-radius: 50%; overflow: hidden; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line)); color: color-mix(in srgb, var(--accent) 50%, var(--muted)); }
+.demo-screen .cv-avatar svg { display: block; width: 100%; height: 100%; }
+.demo-screen .cv-id { min-width: 0; }
+.demo-screen .cv-name { display: block; font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
+.demo-screen .cv-role { display: block; margin-top: .125rem; font-size: .75rem; color: var(--text); }
+.demo-screen .cv-contact { display: block; margin-top: .25rem; font-size: .625rem; color: var(--muted); }
+.demo-screen .cv-summary { margin: .8125rem 0 0; font-size: .6875rem; line-height: 1.55; color: var(--muted); }
+.demo-screen .cv-sec { margin-top: 1.125rem; font-size: .5625rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.demo-screen .cv-item { margin-top: .5rem; }
+.demo-screen .cv-timeline { position: relative; padding-left: .9375rem; margin-top: .625rem; }
+.demo-screen .cv-timeline::before { content: ''; position: absolute; left: 2.5px; top: 6px; bottom: 6px; width: 1.5px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.demo-screen .cv-timeline .cv-item { position: relative; margin-top: .75rem; }
+.demo-screen .cv-timeline .cv-item:first-child { margin-top: 0; }
+.demo-screen .cv-timeline .cv-item::before { content: ''; position: absolute; top: 4px; left: -.9375rem; width: 7px; height: 7px; box-sizing: border-box; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--surface); }
+.demo-screen .cv-item-h { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.demo-screen .cv-item-t { font-size: .6875rem; font-weight: 600; }
+.demo-screen .cv-item-y { font-size: .5625rem; color: var(--muted); flex: none; }
+.demo-screen .cv-item-d { margin-top: .0625rem; font-size: .625rem; color: var(--muted); line-height: 1.4; }
+.demo-screen .cv-tags { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
+.demo-screen .cv-tags span { font-size: .5625rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: .0625rem .375rem; }
+.demo-screen .chat-pane { padding: .75rem; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
+.demo-screen .chat-id { display: flex; align-items: center; gap: .375rem; font-size: .6875rem; font-weight: 500; margin: -.75rem -.75rem .625rem; padding: .5rem .75rem; background: color-mix(in srgb, var(--surface), var(--text) 8%); box-shadow: var(--shadow-sm); }
+.demo-screen .live { width: .4375rem; height: .4375rem; border-radius: 999px; background: var(--accent); flex: none; }
+.demo-screen .r-thread { display: flex; flex-direction: column; height: auto; flex: 1; min-height: 0; gap: 1.25rem; justify-content: flex-end; padding-bottom: 2.75rem; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%); }
+.demo-screen .r-row { display: flex; align-items: flex-start; gap: .5rem; }
+.demo-screen .r-row.user { justify-content: flex-end; }
+.demo-screen .r-av { width: 1.25rem; height: 1.25rem; flex: none; align-self: flex-start; margin-top: 1px; border-radius: 999px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--muted); display: grid; place-items: center; }
+.demo-screen .r-av svg { width: .6875rem; height: .6875rem; }
+.demo-screen .r-col { display: flex; flex-direction: column; align-items: flex-start; gap: .75rem; min-width: 0; max-width: 100%; }
+.demo-screen .r-bubble { max-width: 86%; padding: .4375rem .5625rem; border-radius: 11px; font-size: .75rem; line-height: 1.5; }
+.demo-screen .r-bubble.assistant { background: var(--raised); border: 1px solid var(--raised-line); box-shadow: var(--shadow-md); border-top-left-radius: 4px; }
+.demo-screen .r-bubble.user { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--text); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-top-right-radius: 4px; }
+.demo-screen .r-tl { list-style: none; margin: 0; padding: 0; max-width: 100%; display: flex; flex-direction: column; }
+.demo-screen .r-tl-step { position: relative; display: flex; align-items: flex-start; gap: .5rem; padding-bottom: .625rem; animation: dsTlin .34s cubic-bezier(.22,.61,.36,1) both; }
+.demo-screen .r-tl-step:last-child { padding-bottom: 0; }
+.demo-screen .r-tl-step:not(:last-child)::before { content: ''; position: absolute; left: 6px; top: 15px; bottom: -1px; width: 2px; border-radius: 2px; background: var(--line); transition: background .3s ease; }
+.demo-screen .r-tl-step.done:not(:last-child)::before { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+@keyframes dsTlin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.demo-screen .r-tl-node { position: relative; z-index: 1; width: 14px; height: 14px; flex: none; display: grid; place-items: center; margin-top: 1px; }
+.demo-screen .r-tl-spin { width: 13px; height: 13px; border-radius: 50%; background: conic-gradient(from 90deg, transparent 8%, color-mix(in srgb, var(--accent) 22%, transparent) 38%, var(--accent) 100%); -webkit-mask: radial-gradient(closest-side, transparent 58%, #000 60%); mask: radial-gradient(closest-side, transparent 58%, #000 60%); animation: dsSpin .75s linear infinite; }
+@keyframes dsSpin { to { transform: rotate(360deg); } }
+.demo-screen .r-tl-step.done .r-tl-node { background: var(--accent); border-radius: 50%; color: var(--on-accent); animation: dsNodepop .3s cubic-bezier(.34,1.56,.64,1) both; }
+.demo-screen .r-tl-step.done .r-tl-node svg { width: 9px; height: 9px; }
+@keyframes dsNodepop { from { transform: scale(.5); } to { transform: scale(1); } }
+.demo-screen .r-tl-label { font-size: .6875rem; line-height: 1.3; color: var(--text); padding-top: 1px; }
+.demo-screen .r-tl-step.done .r-tl-label { color: var(--muted); }
+.demo-screen .r-tl-step.active .r-tl-label { background: linear-gradient(100deg, color-mix(in srgb, var(--text) 30%, transparent) 32%, var(--text) 50%, color-mix(in srgb, var(--text) 30%, transparent) 68%); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; animation: dsShimmer 1.5s linear infinite; }
+@keyframes dsShimmer { from { background-position: 220% 0; } to { background-position: -220% 0; } }
+.demo-screen .r-composer { position: absolute; left: .75rem; right: .75rem; bottom: .75rem; display: flex; align-items: center; gap: .375rem; border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); border-radius: 999px; padding: 0 .6875rem; font-size: .75rem; color: var(--muted); height: 2rem; box-sizing: border-box; white-space: nowrap; overflow: hidden; background: var(--raised); box-shadow: var(--shadow-lg); z-index: 2; }
+.demo-screen .r-typed { color: var(--text); }
+.demo-screen .caret { display: inline-block; width: 1px; height: .9em; margin-left: 1px; background: var(--muted); vertical-align: -1px; animation: dsBlink 1.1s steps(1, end) infinite; }
+@keyframes dsBlink { 50% { opacity: 0; } }
+.demo-screen .r-send { flex: none; margin-left: auto; width: 1.375rem; height: 1.375rem; margin-right: -.3125rem; border-radius: 999px; display: grid; place-items: center; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--muted); transition: background .2s var(--ease), color .2s var(--ease), transform .12s ease; }
+.demo-screen .r-send svg { width: .6875rem; height: .6875rem; }
+.demo-screen .r-send.ready { background: var(--accent); color: var(--on-accent); }
+.demo-screen .r-send.press { transform: scale(.82); }
+@media (prefers-reduced-motion: reduce) { .demo-screen .r-tl-spin, .demo-screen .caret, .demo-screen .live-dot { animation: none; } .demo-screen .r-tl-step { animation: none; } }
+</style>
+
+<div class="demo-screen" aria-hidden="true">
+  <div class="lid">
+    <div class="screen">
+      <div class="chrome">
+        <div class="tabstrip">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="tab">
+            <svg class="tab-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
+            <span class="tab-t">Maya Lindqvist</span>
+            <svg class="tab-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </span>
+          <svg class="newtab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </div>
+        <div class="toolbar">
+          <span class="navs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
+          </span>
+          <div class="omnibox">
+            <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+            <span class="addr"><b>maya</b>.hirees.me</span>
+            <span class="live-tag"><span class="live-dot"></span>Live</span>
+          </div>
+          <svg class="menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+        </div>
+      </div>
+      <div class="screen-panes">
+        <div class="cv-pane">
+          <div class="cv-page">
+            <div class="cv-head">
+              <div class="cv-avatar">
+                <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8.8" r="4.2"/><path d="M12 13.4c-5.2 0-8.7 3.5-8.7 8.7V24h17.4v-1.9c0-5.2-3.5-8.7-8.7-8.7z"/></svg>
+              </div>
+              <div class="cv-id">
+                <span class="cv-name">Maya Lindqvist</span>
+                <span class="cv-role">Senior Platform Engineer</span>
+                <span class="cv-contact">maya@hey.com · Berlin</span>
+              </div>
+            </div>
+            <p class="cv-summary">Builds and runs the platforms other teams ship on — Kubernetes, Go, and a great deal of Terraform.</p>
+            <div class="cv-sec">Experience</div>
+            <div class="cv-timeline">
+              <div class="cv-item">
+                <div class="cv-item-h"><span class="cv-item-t">Staff Engineer · Northwind</span></div>
+                <div class="cv-item-d">Owns the platform behind more than 40 services.</div>
+              </div>
+              <div class="cv-item">
+                <div class="cv-item-h"><span class="cv-item-t">Backend Engineer · Kesler</span></div>
+                <div class="cv-item-d">Builds Go payment services and their Terraform.</div>
+              </div>
+              <div class="cv-item">
+                <div class="cv-item-h"><span class="cv-item-t">Software Engineer · Vela</span></div>
+                <div class="cv-item-d">Shipped the first billing API and its runbooks.</div>
+              </div>
+            </div>
+            <div class="cv-sec">Skills</div>
+            <div class="cv-tags"><span>Kubernetes</span><span>Go</span><span>Terraform</span><span>Postgres</span><span>AWS</span></div>
+            <div class="cv-sec">Education</div>
+            <div class="cv-item">
+              <div class="cv-item-h"><span class="cv-item-t">B.Sc. Computer Science · TU Berlin</span><span class="cv-item-y">2015</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="chat-pane">
+          <div class="chat-id"><span class="live"></span> Maya's assistant</div>
+          <div class="r-thread" id="ds-thread"></div>
+          <div class="r-composer">
+            <span class="r-typed" id="ds-typed"></span><span class="caret"></span>
+            <span class="r-send" id="ds-send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* The landing hero's conversation() loop, self-contained for the sign-up panel. Types the
+   recruiter's question, spins then ticks each tool, streams the sourced answer, loops. Uses
+   ds-* ids so it only ever drives this component. Non-interactive mock — nothing here calls out. */
+(function () {
+  var thread = document.getElementById('ds-thread');
+  var out = document.getElementById('ds-typed');
+  var send = document.getElementById('ds-send');
+  if (!thread || !out) return;
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var EXCHANGES = [
+    { q: 'Does she actually use Terraform?',
+      tools: ['reading the CV', 'browsing documents', 'exploring projects'],
+      a: "Yes — it's how she manages all of Northwind's infrastructure, around 40 services, and two of her public repos are Terraform modules." },
+    { q: 'What is her notice period?',
+      tools: ['loading facts', 'reading the CV'],
+      a: "Two months' notice. She's open to remote within Europe, and to Munich on-site two days a week." },
+    { q: 'Has she built anything real in Go?',
+      tools: ['exploring projects', 'reading the project', 'reading the CV'],
+      a: "Three of her repos are Go. The largest is a load balancer that now handles Northwind's internal traffic." },
+    { q: 'Why did she leave her last role?',
+      tools: ['reading the CV', 'browsing documents', 'loading facts'],
+      a: "She hasn't recorded anything about that, so I'd rather not guess — worth asking her directly." }
+  ];
+  var BOT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 4.4V7M2.2 11.6v2.8M21.8 11.6v2.8"/><circle cx="9.2" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="14.8" cy="12" r="1.3" fill="currentColor" stroke="none"/><path d="M9.4 14.9a3 3 0 005.2 0"/></svg>';
+  var FACE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4.8 20.5a7.4 7.4 0 0114.4 0"/></svg>';
+  var CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+  var GREETING = "Hi — I'm Maya's assistant. I've read her CV, her projects and her notes. Ready when you are, just ask.";
+
+  function pause(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function follow() { thread.scrollTop = thread.scrollHeight; }
+  function trim() { while (thread.children.length > 24) thread.removeChild(thread.firstChild); follow(); }
+  function userRow(text) {
+    var row = document.createElement('div'); row.className = 'r-row user';
+    var b = document.createElement('div'); b.className = 'r-bubble user'; b.textContent = text;
+    var av = document.createElement('span'); av.className = 'r-av'; av.innerHTML = FACE;
+    row.appendChild(b); row.appendChild(av); thread.appendChild(row); trim();
+  }
+  function agentRow() {
+    var row = document.createElement('div'); row.className = 'r-row assistant';
+    var av = document.createElement('span'); av.className = 'r-av'; av.innerHTML = BOT;
+    var col = document.createElement('div'); col.className = 'r-col';
+    row.appendChild(av); row.appendChild(col); thread.appendChild(row); trim(); return col;
+  }
+  function timeline(col) { var l = document.createElement('ol'); l.className = 'r-tl'; col.appendChild(l); return l; }
+  function step(list, label) {
+    var item = document.createElement('li'); item.className = 'r-tl-step active';
+    var node = document.createElement('span'); node.className = 'r-tl-node'; node.innerHTML = '<span class="r-tl-spin"></span>';
+    var text = document.createElement('span'); text.className = 'r-tl-label';
+    text.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    item.appendChild(node); item.appendChild(text); list.appendChild(item); follow(); return item;
+  }
+  function finishStep(item) { item.classList.remove('active'); item.classList.add('done'); item.querySelector('.r-tl-node').innerHTML = CHECK; follow(); }
+  function bubble(col) { var n = document.createElement('div'); n.className = 'r-bubble assistant'; col.appendChild(n); follow(); return n; }
+
+  if (reduced) {
+    var ex0 = EXCHANGES[0];
+    bubble(agentRow()).textContent = GREETING;
+    userRow(ex0.q);
+    var c0 = agentRow(); var t0 = timeline(c0);
+    ex0.tools.forEach(function (t) { finishStep(step(t0, t)); });
+    bubble(c0).textContent = ex0.a;
+    out.textContent = EXCHANGES[1].q;
+    return;
+  }
+
+  async function typeInComposer(text) {
+    out.textContent = ''; if (send) send.classList.remove('ready');
+    for (var i = 0; i < text.length; i++) {
+      out.textContent += text[i];
+      if (i === 0 && send) send.classList.add('ready');
+      await pause(48 + Math.random() * 80);
+    }
+  }
+  async function pressSend() {
+    if (send) send.classList.add('press'); await pause(150);
+    if (send) send.classList.remove('press'); await pause(90);
+    if (send) send.classList.remove('ready');
+  }
+  async function streamAnswer(node, text) {
+    var words = text.split(' ');
+    for (var i = 0; i < words.length; i++) { node.textContent += (i ? ' ' : '') + words[i]; follow(); await pause(42 + Math.random() * 55); }
+  }
+  async function greet() { await streamAnswer(bubble(agentRow()), GREETING); await pause(1100); }
+  async function run() {
+    await greet();
+    var i = 0;
+    while (true) {
+      var ex = EXCHANGES[i % EXCHANGES.length]; i++;
+      await typeInComposer(ex.q); await pause(420);
+      await pressSend(); out.textContent = ''; userRow(ex.q); await pause(380);
+      var col = agentRow(); var list = timeline(col);
+      for (var t = 0; t < ex.tools.length; t++) { var s = step(list, ex.tools[t]); await pause(780 + Math.random() * 380); finishStep(s); await pause(190); }
+      await pause(260);
+      await streamAnswer(bubble(col), ex.a);
+      await pause(2400);
+      if (i % EXCHANGES.length === 0) { await pause(600); thread.textContent = ''; await greet(); }
+    }
+  }
+  run();
+})();
+</script>

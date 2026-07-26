@@ -1,21 +1,24 @@
 {% extends "allauth/layouts/base.html" %}
-{% comment %}The email-verification-CODE step (ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED). allauth
-mails a short code and lands the visitor here; entering it verifies the address, logs them in,
-and only THEN redirects to APP_URL. `verify_form` (the code field), `email`, and the resend
-action ("action=resend") are provided by allauth's view.{% endcomment %}
+{% comment %}The email-verification-CODE step (ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED). Entering
+the mailed code verifies the address, logs the visitor in, and only THEN redirects to APP_URL.
+`verify_form`, `email`, and the resend action are provided by allauth's view.{% endcomment %}
 {% block head_title %}Enter your code{% endblock %}
 {% block content %}
-  <h1>Check your email</h1>
-  <p>We sent a verification code to <strong>{{ email }}</strong>. Enter it below to confirm your address — it expires in a few minutes.</p>
-  <form method="post" action="{% url 'account_email_verification_sent' %}">
+  <div class="auth-head">
+    <h1 class="auth-title">Check your email</h1>
+    <p class="auth-sub">We sent a verification code to <strong>{{ email }}</strong>. Enter it below to confirm your address — it expires in a few minutes.</p>
+  </div>
+
+  <form class="auth-form" method="post" action="{% url 'account_email_verification_sent' %}">
     {% csrf_token %}
-    {{ verify_form.as_p }}
+    {% include "partials/_fields.html" with form=verify_form %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
-    <button type="submit">Confirm</button>
+    <button class="btn" type="submit">Confirm</button>
   </form>
-  <form method="post" action="{% url 'account_email_verification_sent' %}">
+
+  <form method="post" action="{% url 'account_email_verification_sent' %}" style="margin-top:.75rem;">
     {% csrf_token %}
     <input type="hidden" name="action" value="resend">
-    <button type="submit" style="margin-top:.5rem;background:transparent;color:var(--accent);border-color:var(--raised-line);">Send a new code</button>
+    <button class="btn btn--ghost" type="submit">Send a new code</button>
   </form>
 {% endblock %}

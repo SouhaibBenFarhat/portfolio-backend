@@ -4,7 +4,6 @@
 schema. `favicon` stays a plain Django view — it serves an image, not JSON API.
 """
 
-from allauth.socialaccount.adapter import get_adapter
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
@@ -17,37 +16,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from .providers import PROVIDERS, configured_provider_ids
 from .serializers import HealthSerializer, MeSerializer, ServiceDescriptorSerializer
-
-# The social providers the sign-in page offers, in display order, each with the allauth URL
-# name that starts its OAuth flow. All three are always shown (they're the product's whole
-# offering); a provider with no credential configured still renders, but its button routes to
-# a friendly "not set up yet" notice instead of erroring — see signin(). LinkedIn rides on the
-# generic OpenID Connect provider (its classic OAuth2 API is dead), so its route is the
-# parametrised openid_connect one.
-_SIGNIN_PROVIDERS = [
-    {"id": "google", "name": "Google", "url_name": "google_login", "url_kwargs": {}},
-    {"id": "github", "name": "GitHub", "url_name": "github_login", "url_kwargs": {}},
-    {
-        "id": "linkedin",
-        "name": "LinkedIn",
-        "url_name": "openid_connect_login",
-        "url_kwargs": {"provider_id": "linkedin"},
-    },
-]
-
-
-def _configured_provider_ids(request) -> set:
-    """Provider ids with an active credential, so a click can actually complete a login.
-    One pass through allauth's adapter (our encrypted-credential one), so it agrees exactly
-    with what happens on submit — an unconfigured provider is shown but routed to a notice."""
-    present = set()
-    for app in get_adapter(request).list_apps(request):
-        present.add(app.provider)
-        if app.provider_id:
-            present.add(app.provider_id)
-    return {p["id"] for p in _SIGNIN_PROVIDERS if p["id"] in present}
-
 
 # The hirees.me mark: a CV with a brain badged into its corner — a document that thinks.
 # Composed from two Lucide icons (file-text + brain, ISC licensed, https://lucide.dev),
@@ -149,7 +119,7 @@ def landing(request: HttpRequest) -> HttpResponse:
             "google_login_url": reverse("google_login"),
             # When Google has no credential, the hero button routes to the friendly notice
             # instead of erroring (same graceful handling as /signin).
-            "google_configured": "google" in _configured_provider_ids(request),
+            "google_configured": "google" in configured_provider_ids(request),
         },
     )
 
@@ -169,21 +139,12 @@ def signin(request: HttpRequest) -> HttpResponse:
     """
     if request.user.is_authenticated:
         return redirect(settings.LOGIN_REDIRECT_URL)
-    configured = _configured_provider_ids(request)
-    providers = [
-        {
-            "id": p["id"],
-            "name": p["name"],
-            "login_url": reverse(p["url_name"], kwargs=p["url_kwargs"]),
-            "configured": p["id"] in configured,
-        }
-        for p in _SIGNIN_PROVIDERS
-    ]
-    # A provider the visitor tried that isn't set up. Validated against the known names so the
-    # notice can never render arbitrary injected text.
+    # The provider buttons come from the {% social_buttons %} tag (shared with login/signup).
+    # A provider the visitor tried that isn't set up is validated against the known names, so
+    # the notice can never render arbitrary injected text.
     requested = request.GET.get("unavailable", "")
-    unavailable = requested if requested in {p["name"] for p in _SIGNIN_PROVIDERS} else ""
-    return render(request, "core/signin.html", {"providers": providers, "unavailable": unavailable})
+    unavailable = requested if requested in {p["name"] for p in PROVIDERS} else ""
+    return render(request, "core/signin.html", {"unavailable": unavailable})
 
 
 @extend_schema(
