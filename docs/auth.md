@@ -55,10 +55,13 @@ reason as Mistral). Config is env-driven (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE
 `.env.example`). **With `EMAIL_HOST` unset the app uses Django's console backend** — the code
 prints to the server log, so the whole flow is testable locally with nothing sent.
 
-Deliverability is DNS-dependent: on Cloudflare, add Brevo's **SPF**, **DKIM**, and a **DMARC**
-record for `hirees.me`, and verify `no-reply@hirees.me` as a Brevo sender — otherwise codes land in
-spam. Owner setup before production email sign-up works: create the Brevo account + those DNS
-records, and set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` in the Render dashboard.
+Deliverability is DNS-dependent: Brevo authenticates hirees.me via a branded subdomain
+(`mail.hirees.me`) plus DKIM (×2), a return-path, a `brevo-code` ownership TXT, and a DMARC
+record on Cloudflare — **the exact seven records are in `docs/infrastructure.md` → "Email
+deliverability (Brevo)"**. Every CNAME must be grey-cloud / **DNS only**, or DKIM silently breaks.
+Owner setup before production email sign-up works: create the Brevo account, add those records,
+click **Authenticate domain** in Brevo, and set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (the
+Brevo SMTP key) in Render.
 
 ## Credentials live in the admin, encrypted
 

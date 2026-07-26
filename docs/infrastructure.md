@@ -158,6 +158,38 @@ flattening**, which is why no `A` record is needed. If a host ever requires a li
 `A` record, Render's address is `216.24.57.1` — but prefer the CNAME, since an IP can
 change under you and a hostname can't.
 
+### Email deliverability (Brevo)
+
+Transactional mail — the email-verification code and password-reset links (see `docs/auth.md`) —
+is sent through **Brevo** (EU, free tier, 300/day). A branded subdomain **`mail.hirees.me`**
+replaces Brevo's default `brevo-link.com` links, so mail is DKIM-signed as hirees.me.
+
+Authenticating the domain in Brevo needs these **seven** Cloudflare records. Every CNAME must be
+**DNS only (grey cloud)** — a proxied DKIM/return-path CNAME silently breaks signing. Paste the
+two TXT values whole (Brevo's UI shows them truncated):
+
+| Type | Name | Target / Content | Proxy |
+| --- | --- | --- | --- |
+| CNAME | `mail` | `mail-hirees-me.brand.brevosend.com` | DNS only |
+| TXT | `@` | `brevo-code:fe882f3e36e78538f753291870b06d2f` | — |
+| CNAME | `brevo1._domainkey` | `b1.hirees-me.dkim.brevo.com` | DNS only |
+| CNAME | `brevo2._domainkey` | `b2.hirees-me.dkim.brevo.com` | DNS only |
+| TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com` | — |
+| CNAME | `img.mail` | `mail-hirees-me.img.brand.brevosend.com` | DNS only |
+| CNAME | `r.mail` | `mail-hirees-me.r.brand.brevosend.com` | DNS only |
+
+Brevo splits DKIM across two CNAMEs (`brevo1`/`brevo2._domainkey`) and uses `r.mail` as the
+return-path — that's where SPF alignment comes from, so there is **no root `SPF`/`TXT` to add**.
+The `@` `brevo-code` TXT is the ownership check; `_dmarc` is `p=none` (monitor-only) — tighten to
+`quarantine`/`reject` later, once mail is confirmed aligned. (`mail` is on the reserved-slug list
+below, so a tenant can never claim it.)
+
+**Steps:** add the seven records in Cloudflare → in Brevo (*Senders, Domains & IPs → Domains →
+hirees.me*) hit **Verify records** then **Authenticate domain** → set `EMAIL_HOST_USER` /
+`EMAIL_HOST_PASSWORD` (the Brevo SMTP key, *SMTP & API*) in Render. Until the domain is
+authenticated, email sign-up can't send (social login is unaffected). Propagation can take up to
+48h but Cloudflare is usually minutes.
+
 ### Django
 
 `ALLOWED_HOSTS` (Render → Environment) must include the domain or every request returns
