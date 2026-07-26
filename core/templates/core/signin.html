@@ -143,6 +143,19 @@ main.auth { flex: 1; display: grid; place-items: center; padding: 2.5rem 0; }
 /* ---- Footer -------------------------------------------------------------- */
 footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 .footer-inner { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; align-items: center; font-size: .8125rem; color: var(--muted); }
+
+/* ---- Email + password (sits under the social buttons) -------------------- */
+.divider { display: flex; align-items: center; gap: .75rem; margin: 1.5rem 0 .25rem; color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .14em; }
+.divider::before, .divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+.email-form { display: flex; flex-direction: column; gap: .75rem; margin-top: 1.25rem; text-align: left; }
+.field { display: flex; flex-direction: column; gap: .375rem; }
+.field span { font-size: .8125rem; font-weight: 500; color: var(--muted); }
+.field input { width: 100%; font-family: inherit; font-size: .9375rem; color: var(--text); background: var(--bg); border: 1px solid var(--raised-line); border-radius: 8px; padding: .625rem .75rem; transition: border-color .2s var(--ease); }
+.field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.auth-submit { width: 100%; margin-top: .25rem; border: 1px solid transparent; border-radius: 8px; padding: .8125rem 1rem; font-family: inherit; font-size: .9375rem; font-weight: 500; cursor: pointer; background: var(--accent); color: var(--on-accent); transition: transform .2s var(--ease), filter .2s var(--ease); }
+.auth-submit:hover { transform: translateY(-1px); filter: brightness(1.06); }
+.auth-alt { margin: 1rem 0 0; text-align: center; font-size: .8125rem; color: var(--muted); line-height: 1.6; }
+.auth-alt a { color: var(--accent); }
 </style>
 <script>
   /* Apply a saved theme choice before first paint, so there's no flash of the wrong
@@ -199,7 +212,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
       <div class="auth-head">
         <p class="label">Your page on hirees.me</p>
         <h1 class="auth-title">Claim your page</h1>
-        <p class="auth-sub">Continue to build the page recruiters talk to. First time here? Your account is created automatically — no forms.</p>
+        <p class="auth-sub">Continue with a provider below, or sign in with your email.</p>
       </div>
 
       {% if unavailable %}
@@ -233,6 +246,22 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
         </form>
         {% endfor %}
       </div>
+
+      <div class="divider"><span>or with email</span></div>
+
+      <form class="email-form" method="post" action="{% url 'account_login' %}">
+        {% csrf_token %}
+        <label class="field">
+          <span>Email</span>
+          <input type="email" name="login" autocomplete="email" required placeholder="you@company.com">
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button class="auth-submit" type="submit">Sign in</button>
+      </form>
+      <p class="auth-alt">New to hirees.me? <a href="{% url 'account_signup' %}">Create an account</a><br><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
 
       <p class="auth-foot">By continuing you agree to the terms. We only use your account to sign you in.</p>
     </div>

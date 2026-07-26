@@ -1,0 +1,16 @@
+{% extends "allauth/layouts/base.html" %}
+{% comment %}Email + password registration. On submit, allauth emails a verification code and
+routes to confirm_email_verification_code.html — the account isn't usable until the code is
+entered (ACCOUNT_EMAIL_VERIFICATION="mandatory").{% endcomment %}
+{% block head_title %}Create your account{% endblock %}
+{% block content %}
+  <h1>Create your account</h1>
+  <p>Already have one? <a href="{% url 'account_login' %}">Sign in</a>.</p>
+  <form method="post" action="{% url 'account_signup' %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
+    <button type="submit">Create account</button>
+  </form>
+  <p class="foot">We'll email you a code to confirm your address before you're signed in.</p>
+{% endblock %}

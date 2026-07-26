@@ -1,14 +1,16 @@
-# Authentication — social sign-in
+# Authentication — sign-in
 
-How visitors sign in to hirees.me, where the provider credentials live, and how the OAuth
-apps are registered. Domain/DNS/hosting is in `docs/infrastructure.md`; the build roadmap is
-in `plans/auth-multitenancy-plan.md`.
+How visitors sign in to hirees.me — social login **and** email + password — where the provider
+credentials live, how the OAuth apps are registered, and how the verification-code email is sent.
+Domain/DNS/hosting is in `docs/infrastructure.md`; the build roadmap is in
+`plans/auth-multitenancy-plan.md`.
 
 ## How it works
 
-- **django-allauth**, self-hosted, **social-login only** — Google, GitHub, LinkedIn. Sign-in
-  and sign-up are one action: the first "Continue with…" creates the account, later ones just
-  log in (there is no separate sign-up form — this is the standard OAuth pattern).
+- **django-allauth**, self-hosted. Two ways in, side by side: **social login** (Google, GitHub,
+  LinkedIn) and **email + password**. For social, sign-in and sign-up are one action — the first
+  "Continue with…" creates the account, later ones just log in. Email + password has a real
+  sign-up form and requires a verification code (see "Email + password sign-in" below).
 - The entry pages are **server-rendered in the site's own design** (not allauth's default
   templates): the landing hero leads with a one-click **Continue with Google**, and **`/signin`**
   shows all three providers. After sign-in a visitor is redirected to the **dashboard SPA at
@@ -17,7 +19,52 @@ in `plans/auth-multitenancy-plan.md`.
   `/accounts/<provider>/login/callback/` — for LinkedIn it's `/accounts/oidc/linkedin/login/callback/`.
 
 Key files: `core/views.py` (`landing`, `signin`, `me`), `core/templates/core/signin.html`,
-`core/models.py` (`OAuthCredential`), `core/adapter.py`, and the auth block in `config/settings.py`.
+the themed allauth pages in `templates/account/` + `templates/allauth/`, `core/models.py`
+(`OAuthCredential`), `core/adapter.py`, and the auth/email blocks in `config/settings.py`.
+
+## Email + password sign-in
+
+Alongside social login, visitors can register with an email and password. Because this is a
+public endpoint, a fake or mistyped address must never reach the product — so allauth is set to
+**mandatory email verification by code** (`ACCOUNT_EMAIL_VERIFICATION="mandatory"` +
+`ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED=True`): on sign-up allauth emails a short code, the
+visitor types it back, and only **then** is the account verified, logged in, and redirected to
+`app.hirees.me` (`LOGIN_REDIRECT_URL`). An unverified login is bounced back to the code page — it
+never reaches the dashboard. The flow: sign-up form → emailed code → enter code → signed in →
+`app.hirees.me`.
+
+Social sign-in stays **exempt** (`SOCIALACCOUNT_EMAIL_VERIFICATION="none"`) — its email is already
+provider-verified — so the one-click social flow is unchanged.
+
+- **Entry:** `/signin` carries the email+password form (posts to allauth's `account_login`) and a
+  "Create an account" link, beside the social buttons. The pages — login, sign-up, code entry,
+  password reset, password change — are allauth's own views, **themed** by overriding
+  `templates/account/*` on top of `templates/allauth/layouts/base.html` (the same base the social
+  pages use).
+- **Anti-abuse** (the free tier is public): `AUTH_PASSWORD_VALIDATORS` reject weak passwords;
+  `ACCOUNT_RATE_LIMITS` cap sign-ups, failed logins, and code resends per IP; the code expires in
+  15 minutes with a 3-attempt cap. Verification-by-code is itself the anti-fake-email control.
+- **Password reset** ("forgot password") and change are the same allauth views, themed, using the
+  same sender.
+
+### Sending the mail (Brevo)
+
+The code and reset links go out over SMTP via **Brevo** (EU, free tier — same data-residency
+reason as Mistral). Config is env-driven (`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS`,
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`; see `render.yaml` /
+`.env.example`). **With `EMAIL_HOST` unset the app uses Django's console backend** — the code
+prints to the server log, so the whole flow is testable locally with nothing sent.
+
+Deliverability runs off a branded subdomain (`mail.hirees.me`) plus DKIM (×2), a return-path, a
+`brevo-code` ownership TXT, and a DMARC record on Cloudflare — **the seven records, and how they
+were added (via the Cloudflare API, not the flaky dashboard), are in `docs/infrastructure.md` →
+"Email deliverability (Brevo)"**. Every CNAME is grey-cloud / **DNS only** (a proxied DKIM CNAME
+silently breaks signing). Those records are live and **Brevo reports the domain authenticated
+(2026-07-26)**.
+
+The one remaining owner step for production email: set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD`
+(the Brevo SMTP key, from Brevo → *SMTP & API*) in Render. Until then the app falls back to the
+console backend, so email sign-up can't send in production — social login is unaffected.
 
 ## Credentials live in the admin, encrypted
 
@@ -83,9 +130,13 @@ reach `/admin` — expected for the owner, but a **security risk in general**: i
 ever returns an email the account owner never verified, an attacker could take over a matching
 account. A brand-new email just creates a plain user (`is_staff=False`, no `/admin`).
 
-Before sign-in is public (Phase 2), tighten this: require provider-verified emails for linking,
-or disable auto-link entirely (`SOCIALACCOUNT_EMAIL_AUTHENTICATION` / a custom adapter), and
-never auto-grant `is_staff`.
+Now that **email + password** accounts exist, an email can be owned by a local account too, which
+raises the stakes. The conservative default is already in place — `SOCIALACCOUNT_EMAIL_AUTHENTICATION`
+is `False`, so a social login does **not** silently authenticate into an existing local account by
+email match. Still tracked before sign-in goes public (Phase 2): add an explicit `pre_social_login`
+guard that refuses to link onto an existing account via an **unverified** provider email, and never
+auto-grant `is_staff`. This was deliberately left out of the email+password change to avoid touching
+the working social flow without provider-level integration testing.
 
 ## Session strategy — how the SPA knows you're signed in
 
