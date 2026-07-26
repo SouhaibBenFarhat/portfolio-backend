@@ -127,8 +127,8 @@ dashboard and is never committed. Don't try to rotate them.
 | DNS | Cloudflare, Free plan |
 | Nameservers | `kianchau.ns.cloudflare.com`, `rosa.ns.cloudflare.com` |
 | Cloudflare zone id | `5596becd0f0c932bdebd05de9784efa8` |
-| Host | Render, service `portfolio-backend` (`srv-d99vs3ecjfls739139ng`), free plan |
-| Render hostname | `portfolio-backend-2huw.onrender.com` |
+| Host | Render (free): backend web service `portfolio-backend` (`srv-d99vs3ecjfls739139ng`) + frontend static site `hirees-frontend` (`srv-d9j46ckm0tmc73ad0au0`) |
+| Render hostnames | backend `portfolio-backend-2huw.onrender.com` · frontend `hirees-frontend.onrender.com` |
 
 ### DNS records
 
@@ -136,12 +136,22 @@ dashboard and is never committed. Don't try to rotate them.
 | --- | --- | --- | --- |
 | CNAME | `@` (apex, = `hirees.me`) | `portfolio-backend-2huw.onrender.com` | DNS only |
 | CNAME | `www` | `portfolio-backend-2huw.onrender.com` | DNS only |
-| CNAME | `api` | `portfolio-backend-2huw.onrender.com` | DNS only |
+| CNAME | `app` | `hirees-frontend.onrender.com` | DNS only |
 
-`api.hirees.me` was added on **2026-07-26** as the backend's public API hostname (social
-sign-in callbacks land here — see `docs/auth.md`). It's a Render **Custom Domain**
-(Settings → Custom Domains) alongside the apex and `www`; status after setup: **Verified**,
-certificate issuing. Kept **DNS only** for the same reason as the others (Gotcha #1).
+`app.hirees.me` (added **2026-07-26**) points at the **frontend dashboard SPA**, which runs on
+a **separate Render Static Site** (`hirees-frontend`, auto-deployed from the
+`SouhaibBenFarhat/hirees-frontend` repo — Vite/React build, publish `dist`) and calls the
+backend at the apex `hirees.me`. It is **not** served by the Django web service; the two are
+independent Render services that happen to share the domain.
+
+`api.hirees.me` was **removed**. It had briefly been added as an API hostname, but the backend
+already serves the API on the apex `hirees.me`, so it was redundant — and dropping it freed a
+Render custom-domain slot for `app.hirees.me` (the Hobby plan includes two custom domains, then
+$0.25/mo each). Note the correction it left behind: social sign-in callbacks do **not** use
+`api.hirees.me`; they run on the **apex** `hirees.me`
+(`https://hirees.me/accounts/<provider>/login/callback/`), which is what the provider consoles
+are registered against — see `docs/auth.md`, where `api.hirees.me` is flagged as an early wrong
+assumption.
 
 A `CNAME` at the apex is normally illegal in DNS; Cloudflare allows it via **CNAME
 flattening**, which is why no `A` record is needed. If a host ever requires a literal
@@ -213,11 +223,16 @@ no migration requires touching the registrar.
 
 The multi-tenant direction (`souhaib.hirees.me`, `someone.hirees.me`) needs:
 
-- A Cloudflare `CNAME` record named `*` pointing at the host — one record covers every
-  tenant, so signup requires no DNS work.
-- A **wildcard custom domain** (`*.hirees.me`) registered at the host. Verify the host
-  supports this; if not, each tenant subdomain has to be registered through the host's API
-  at signup.
+- **Render supports wildcard custom domains** (confirmed 2026-07-26 — it auto-issues TLS,
+  wildcards included). Add `*.hirees.me` on the **backend** web service (it serves the tenant
+  pages, Phase 3), which needs **three** Cloudflare CNAMEs: `*` →
+  `portfolio-backend-2huw.onrender.com`, `_acme-challenge` →
+  `<backend-service-id>.verify.renderdns.com` (Let's Encrypt), and `_cf-custom-hostname` →
+  `<backend-service-id>.hostname.renderdns.com` (Cloudflare ownership check). The apex must
+  already point at Render (it does), and must stay **grey-cloud / DNS-only** — Render's docs
+  warn that proxying the root alongside a wildcard sends root traffic to the wildcard target.
+- **One wildcard = one custom-domain slot**, so every tenant is covered at a flat cost — no
+  per-tenant charge, and signup needs no DNS work.
 - Cloudflare's free Universal SSL already covers `*.hirees.me` at one level deep, which is
   exactly this case. Deeper nesting (`a.b.hirees.me`) would need a paid certificate.
 - `ALLOWED_HOSTS` already covers it via the leading dot on `.hirees.me`.
