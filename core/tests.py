@@ -306,3 +306,13 @@ def test_social_signup_does_not_require_email_so_github_never_stalls():
 
     assert settings.SOCIALACCOUNT_EMAIL_REQUIRED is False
     assert settings.SOCIALACCOUNT_AUTO_SIGNUP is True
+
+
+def test_social_signup_page_uses_the_styled_override():
+    """allauth's default 'complete signup' page is overridden by our themed template, so
+    the social-signup step renders in the site's design, not bare allauth HTML."""
+    from django.template.loader import get_template
+
+    origin = get_template("socialaccount/signup.html").origin.name
+    assert "templates/socialaccount/signup.html" in origin
+    assert "site-packages/allauth" not in origin  # not allauth's default
