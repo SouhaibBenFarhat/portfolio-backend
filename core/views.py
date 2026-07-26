@@ -6,17 +6,18 @@ schema. `favicon` stays a plain Django view — it serves an image, not JSON API
 
 from allauth.socialaccount.adapter import get_adapter
 from django.conf import settings
-from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema
-from rest_framework.decorators import api_view
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from .serializers import HealthSerializer, ServiceDescriptorSerializer
+from .serializers import HealthSerializer, MeSerializer, ServiceDescriptorSerializer
 
 # The social providers the sign-in page offers, in display order, each with the allauth URL
 # name that starts its OAuth flow. All three are always shown (they're the product's whole
@@ -185,14 +186,29 @@ def signin(request: HttpRequest) -> HttpResponse:
     return render(request, "core/signin.html", {"providers": providers, "unavailable": unavailable})
 
 
-@login_required
-def dashboard(request: HttpRequest) -> HttpResponse:
-    """The signed-in landing — a stub for now, so sign-in has a real destination while the
-    full dashboard (upload a CV, manage facts, share the page) is built out. @login_required
-    sends anonymous visitors to settings.LOGIN_URL (/signin). The whole point of this stub is
-    to close the loop: sign in → land here → sign out, all testable end to end today.
-    """
-    return render(request, "core/dashboard.html")
+@extend_schema(
+    responses=MeSerializer,
+    summary="Current session",
+    description="Whether this browser holds a signed-in backend session, and who it belongs to. "
+    "The dashboard SPA (app.hirees.me) has no sign-in UI of its own — it calls this endpoint "
+    "with credentials to gate itself, and sends the visitor to the backend's /signin when the "
+    "response is unauthenticated. Always 200; read the `authenticated` flag.",
+)
+@api_view(["GET"])
+@authentication_classes([SessionAuthentication])  # read the session cookie, for this view only
+@permission_classes([AllowAny])
+def me(request: Request) -> Response:
+    """Report the caller's backend session, for the dashboard SPA's auth gate."""
+    user = request.user
+    if not user.is_authenticated:
+        return Response({"authenticated": False, "email": "", "display": ""})
+    return Response(
+        {
+            "authenticated": True,
+            "email": user.email or "",
+            "display": user.get_full_name() or user.get_username(),
+        }
+    )
 
 
 @extend_schema(
@@ -210,6 +226,7 @@ def index(request: Request) -> Response:
             "endpoints": {
                 "landing": "/",
                 "health": "/health",
+                "me": "/api/me",
                 "docs": "/api/docs/",
                 "schema": "/api/schema/",
                 "chat_stream": "/chat/stream",

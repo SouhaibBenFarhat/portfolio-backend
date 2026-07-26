@@ -11,12 +11,12 @@ in `plans/auth-multitenancy-plan.md`.
   log in (there is no separate sign-up form — this is the standard OAuth pattern).
 - The entry pages are **server-rendered in the site's own design** (not allauth's default
   templates): the landing hero leads with a one-click **Continue with Google**, and **`/signin`**
-  shows all three providers. After sign-in a visitor lands on **`/app`** (a dashboard stub for
-  now); **sign-out** returns to the public landing.
+  shows all three providers. After sign-in a visitor is redirected to the **dashboard SPA at
+  `app.hirees.me`** (`LOGIN_REDIRECT_URL`); **sign-out** returns to the public landing.
 - allauth handles the OAuth callback on the backend. The callback path is
   `/accounts/<provider>/login/callback/` — for LinkedIn it's `/accounts/oidc/linkedin/login/callback/`.
 
-Key files: `core/views.py` (`signin`, `dashboard`, `landing`), `core/templates/core/{signin,dashboard}.html`,
+Key files: `core/views.py` (`landing`, `signin`, `me`), `core/templates/core/signin.html`,
 `core/models.py` (`OAuthCredential`), `core/adapter.py`, and the auth block in `config/settings.py`.
 
 ## Credentials live in the admin, encrypted
@@ -87,18 +87,23 @@ Before sign-in is public (Phase 2), tighten this: require provider-verified emai
 or disable auto-link entirely (`SOCIALACCOUNT_EMAIL_AUTHENTICATION` / a custom adapter), and
 never auto-grant `is_staff`.
 
-## Session strategy — the app/api subdomain split (open decision)
+## Session strategy — how the SPA knows you're signed in
 
-The dashboard SPA (`app.hirees.me`, Phase 4) and the API (`api.hirees.me`) will be **different
-subdomains**. A parent-domain cookie (`.hirees.me`) is sent to *every* tenant page too, so an XSS
-on any tenant page could steal a platform session — therefore `SESSION_COOKIE_DOMAIN = ".hirees.me"`
-is **rejected**. Two clean options for when the SPA lands:
+The backend owns all auth; the dashboard SPA (`app.hirees.me`, a separate Render Static Site)
+has **no sign-in UI of its own**. On load it calls **`GET /api/me`** with `credentials: 'include'`
+and reads the `authenticated` flag: signed in → it renders; signed out → it redirects the browser
+to the backend's **`/signin`**. After sign-in the backend redirects back to the SPA
+(`LOGIN_REDIRECT_URL = APP_URL`).
 
-1. **Token auth** — allauth headless "app" mode: the SPA holds a token, no cross-subdomain cookie
-   needed. Public tenant pages need no auth at all. *(Preferred — sidesteps cookies entirely.)*
-2. **Same-origin API** — serve the API under the dashboard host so a host-only cookie works and
-   never reaches tenant subdomains.
+This runs on an **ordinary host-only session cookie** on `hirees.me` — **not** a parent-domain
+cookie. `app.hirees.me` and `hirees.me` share the registrable domain `hirees.me`, so a fetch from
+the SPA to the backend is **same-site**, and a `SameSite=Lax` cookie rides along on it. Because
+the cookie is scoped to the `hirees.me` host (not `.hirees.me`), it is **never sent to tenant
+subdomains** (`souhaib.hirees.me`) — so `SESSION_COOKIE_DOMAIN = ".hirees.me"` stays **rejected**
+(an XSS on a tenant page still can't reach a platform session). CORS allows the `app.hirees.me`
+origin with credentials (`CORS_ALLOW_CREDENTIALS`), and `CSRF_TRUSTED_ORIGINS` covers the SPA for
+the cross-origin POSTs it will make later (chat, ratings).
 
-Until the SPA exists the flow is **server-rendered** (`HEADLESS_ONLY=false`) with an ordinary
-session cookie scoped to the backend host. The `/_allauth/` headless API is already mounted for
-the SPA to adopt later.
+**Token auth** (allauth headless "app" mode — the `/_allauth/` API is already mounted) stays a
+clean future alternative if a fully cookieless SPA is ever wanted, but the same-site host-only
+cookie above needs no tokens and no auth code in the SPA beyond the gate.

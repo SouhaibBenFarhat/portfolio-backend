@@ -4,19 +4,19 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import dashboard, favicon, favicon_full, health, index, landing, signin
+from core.views import favicon, favicon_full, health, index, landing, me, signin
 
 urlpatterns = [
     # The landing page owns the root; the JSON service descriptor moved to /api/.
     path("", landing, name="landing"),
     path("api/", index, name="index"),
+    path("api/me", me, name="me"),  # session check for the dashboard SPA's auth gate
     path("health", health, name="health"),
     path("healthz", health),  # common k8s-style alias
     path("favicon.svg", favicon),
     path("favicon.ico", favicon),  # browsers request this by default
     path("favicon-full.svg", favicon_full),  # the detailed mark, for app icons and avatars
     path("signin", signin, name="signin"),  # social sign-in / sign-up (the CTAs land here)
-    path("app", dashboard, name="dashboard"),  # signed-in landing (stub; login required)
     path("admin/", admin.site.urls),
     path("ingest/", include("analytics_proxy.urls")),
     path("chat/", include("chat.urls")),
