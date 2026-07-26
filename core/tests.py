@@ -316,3 +316,13 @@ def test_social_signup_page_uses_the_styled_override():
     origin = get_template("socialaccount/signup.html").origin.name
     assert "templates/socialaccount/signup.html" in origin
     assert "site-packages/allauth" not in origin  # not allauth's default
+
+
+def test_allauth_pages_inherit_the_styled_base_layout():
+    """Every allauth page extends allauth/layouts/base.html; overriding it means no allauth
+    page (login-error, logout, email, …) can render as a bare default."""
+    from django.template.loader import get_template
+
+    origin = get_template("allauth/layouts/base.html").origin.name
+    assert "templates/allauth/layouts/base.html" in origin
+    assert "site-packages/allauth" not in origin
