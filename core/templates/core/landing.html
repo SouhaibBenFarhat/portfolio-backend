@@ -124,7 +124,7 @@ a { color: inherit; text-decoration: none; }
   border-radius: 6px;
 }
 
-.wrap { width: 100%; max-width: 68rem; margin: 0 auto; padding: 0 1.5rem; }
+.wrap { width: 100%; max-width: 84rem; margin: 0 auto; padding: 0 1.5rem; }
 @media (min-width: 640px) { .wrap { padding: 0 2rem; } }
 
 /* Small uppercase label — the site's `.label` */
@@ -141,9 +141,12 @@ header {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  /* Fully opaque: a translucent bar would need a backdrop blur to stay legible, and
-     the page deliberately has no blur — so text scrolled behind it showed through. */
-  background: var(--bg);
+  /* Elevated onto the surface plane: white over the warm off-white in light, a step
+     above --bg in dark, with a shadow so content scrolls visibly underneath instead of
+     merging into the bar. Fully opaque (no backdrop blur, like the rest of the page), so
+     text behind it never shows through. */
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
   z-index: 20;
 }
 .header-inner {
@@ -171,35 +174,47 @@ header {
   transition: all .3s var(--ease);
   cursor: pointer;
   font-family: inherit;
+  white-space: nowrap;  /* a pill CTA must never wrap to a second line */
 }
-.btn { border: 1px solid var(--line); background: none; color: inherit; }
-.btn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+/* Secondary button: an elevated surface, not a ghost outline. It used to be
+   background:none with a hairline, so on the page plane it dissolved into the
+   background — the raised plane + a visible border + a shadow give it real presence. */
+.btn { border: 1px solid var(--raised-line); background: var(--raised); color: inherit; box-shadow: var(--shadow-sm); }
+.btn:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-md); }
 .btn-solid { border: 1px solid transparent; background: var(--accent); color: var(--on-accent); }
 .btn-solid:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: var(--shadow-md); }
 
-/* ---- Theme toggle: system (default) / light / dark ----------------------- */
+/* ---- Theme toggle: a single button that flips light/dark ----------------- */
 .theme-toggle {
-  display: inline-flex; gap: 2px;
+  width: 2rem; height: 2rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 2px;
-}
-.theme-toggle button {
-  width: 1.75rem; height: 1.75rem;
-  border: 0; background: none; padding: 0;
-  border-radius: 999px;
+  background: none;
   display: grid; place-items: center;
   color: var(--muted);
   cursor: pointer;
-  transition: background .25s var(--ease), color .25s var(--ease);
+  transition: color .25s var(--ease), border-color .25s var(--ease);
 }
-.theme-toggle button:hover { color: var(--text); }
-.theme-toggle button svg { width: .9375rem; height: .9375rem; }
-.theme-toggle button[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
+.theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.theme-toggle svg { width: 1rem; height: 1rem; }
+/* Show the target mode's icon: moon when light (click → dark), sun when dark. */
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle[data-theme="dark"] .icon-sun { display: block; }
+.theme-toggle[data-theme="dark"] .icon-moon { display: none; }
 .header-actions { display: flex; align-items: center; gap: .75rem; }
+/* In-page nav — hidden on mobile where the bar is already tight. */
+.nav { display: none; }
+@media (min-width: 860px) { .nav { display: flex; gap: 1.5rem; margin-right: .25rem; } }
+.nav a { font-size: .875rem; font-weight: 500; color: var(--muted); transition: color .2s var(--ease); }
+.nav a:hover { color: var(--accent); }
+/* Mobile header was overcrowded: wordmark + three-state theme toggle + CTA together
+   overflowed the bar, wrapping "Create your page" onto a second line and breaking the
+   fixed-height header. Below 560px the toggle steps aside (the page still follows the OS
+   theme by default) and the CTA tightens, so the bar stays one clean line. */
+@media (max-width: 560px) {
+  .header-actions .theme-toggle { display: none; }
+  .header-inner .btn { padding: .5rem 1rem; }
+}
 
 /* ---- Hero ----------------------------------------------------------------
    Sized to one viewport so the diagram is on screen the moment the page loads —
@@ -212,6 +227,63 @@ header {
   min-height: calc(100svh - 3.75rem);
   display: flex; flex-direction: column; justify-content: center;
   padding: 1.25rem 0 1.5rem;
+}
+
+/* Hero on desktop: copy left, the screen alone up in the right (filling the empty space),
+   and the graph (sources → assistant → keyboard/mouse) full-width underneath — only the
+   screen moved up; a cable keeps it connected to the desk below. */
+@media (min-width: 960px) {
+  /* Left column: the flow top-to-bottom (graph → computer); right column: the copy. */
+  .hero-2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); column-gap: 3rem; align-items: start; }
+  .hero-copy { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .hero-2 .flow { grid-column: 1; grid-row: 1; margin-top: 0; display: flex; flex-direction: column; align-items: center; }
+  .stage-screen { grid-column: 1; grid-row: 2; margin-top: 3.25rem; }
+}
+.stage-screen { display: flex; flex-direction: column; align-items: center; }
+.stage-screen .lid { width: 100%; }
+
+/* Vertical graph: square source tiles → a merge → the agent, then the connector to the screen. */
+.sources-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; width: 100%; }
+.sources-row .node { flex-direction: column; align-items: center; justify-content: center; text-align: center; aspect-ratio: 1 / 1; max-width: 5.25rem; margin-inline: auto; gap: .375rem; padding: .4375rem; }
+.sources-row .node-ico { width: 1.75rem; height: 1.75rem; }
+.sources-row .node-ico svg { width: 1.0625rem; height: 1.0625rem; }
+/* GitHub is a recognised brand and a trust signal — give its real mark more presence. */
+.sources-row .node-ico.gh { width: 2rem; height: 2rem; }
+.sources-row .node-ico.gh svg { width: 1.5rem; height: 1.5rem; }
+.sources-row .node-t { font-size: .625rem; line-height: 1.2; }
+.merge { position: relative; width: 100%; height: 4rem; }
+.merge svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.merge path { vector-effect: non-scaling-stroke; }
+.merge .h-base { stroke: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.merge .h-trunk { stroke: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.merge .h-pulse { stroke: var(--accent); stroke-dasharray: 15 100; animation: dash 3.4s var(--ease) infinite; }
+.merge .h-pulse.p2 { animation-delay: .14s; }
+.merge .h-pulse.p3 { animation-delay: .28s; }
+.merge .h-pulse.p4 { animation-delay: .42s; }
+.merge .h-pulse.p5 { animation-delay: .56s; }
+.merge .h-pulse.p-trunk { animation-delay: .85s; }
+.merge .junction { position: absolute; left: 50%; top: 58%; width: .5625rem; height: .5625rem; margin: -.28125rem 0 0 -.28125rem; border-radius: 999px; background: var(--accent); }
+.cable { display: block; width: 2px; height: 2.5rem; position: relative; overflow: hidden; background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.cable::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 40%; background: var(--accent); animation: travel-y 2.4s var(--ease) infinite; }
+
+/* The agent → screen link: a plain CSS line. It hangs off the screen (bottom:100%) so its
+   bottom always meets the screen's top, and its height overshoots the gap so its top tucks
+   a few px up behind the agent card — neither end can show a gap, and there's no SVG or JS
+   to go stale. Desktop only (the layout is two-column there). */
+.hero-2 .wire-out { display: none; }
+@media (min-width: 960px) {
+  .stage-screen { position: relative; }
+  .stage-screen::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 100%;
+    width: 2.5px;
+    height: calc(3.25rem + 6px);
+    background: var(--accent);
+    border-radius: 999px;
+  }
 }
 
 h1 {
@@ -287,7 +359,7 @@ h1 em { font-style: normal; color: var(--accent); }
      from each other and dragged the curves toward vertical. */
   .flow-grid {
     grid-template-columns:
-      minmax(0, 1.15fr) minmax(0, .58fr) 2.5rem minmax(0, .82fr);
+      minmax(0, .82fr) minmax(0, .42fr) 1.75rem minmax(0, 1.65fr);
     gap: 0;
     align-items: center;
   }
@@ -303,24 +375,26 @@ h1 em { font-style: normal; color: var(--accent); }
 
 /* -- source nodes: a labelled card each, with an icon that depicts the thing -- */
 .node {
-  display: flex; align-items: center; gap: .8125rem;
+  display: flex; align-items: center; gap: .5rem;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 9px;
   background: var(--surface);
-  padding: .8125rem .9375rem;
+  padding: .4375rem .5625rem;
   box-shadow: var(--shadow-sm);
 }
 .node-ico {
-  width: 2.375rem; height: 2.375rem; flex: none;
+  width: 1.625rem; height: 1.625rem; flex: none;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
-  border-radius: 9px;
+  border-radius: 7px;
   background: color-mix(in srgb, var(--accent) 6%, var(--surface));
   display: grid; place-items: center;
 }
-.node-ico svg { width: 1.3125rem; height: 1.3125rem; color: var(--accent); }
+.node-ico svg { width: .9375rem; height: .9375rem; color: var(--accent); }
 /* Spans, so they need to be told to stack. */
-.node-t { display: block; font-size: .875rem; font-weight: 500; line-height: 1.3; }
-.node-d { display: block; font-size: .75rem; color: var(--muted); margin-top: .0625rem; line-height: 1.35; }
+.node-t { display: block; font-size: .75rem; font-weight: 500; line-height: 1.25; }
+/* Description dropped in the compact layout — the title alone is clear, and dropping it
+   is what shrinks each source to a chip so the laptop can take the freed space. */
+.node-d { display: none; }
 /* The cards now stack inside .sources rather than being placed on grid rows, so no
    row classes are needed — DOM order is the order. */
 
@@ -346,7 +420,7 @@ h1 em { font-style: normal; color: var(--accent); }
     /* A flex child of .src-group, stretched to the sources' height — that equality is
        what keeps the curve endpoints on the card centres. */
     flex: none;
-    width: 8rem;
+    width: 5rem;
   }
   .harness svg { display: block; width: 100%; height: 100%; overflow: visible; }
   /* Set on the paths themselves, via CSS. As an attribute on the parent <g> it is
@@ -432,6 +506,8 @@ h1 em { font-style: normal; color: var(--accent); }
    accent-tinted plane and a heavier border — because it's the thing being sold. */
 .agent {
   grid-column: 1 / -1;
+  position: relative;   /* above the merge, so the trunk end tucks behind the card, not over it */
+  z-index: 1;
   border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--line));
   border-radius: 16px;
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
@@ -474,18 +550,176 @@ h1 em { font-style: normal; color: var(--accent); }
   45%      { opacity: 1;   transform: scale(1.12); }
 }
 
+.agent-name {
+  font-family: var(--font-display); font-size: 1.0625rem; font-weight: 600;
+  letter-spacing: -.01em; color: var(--text); margin: 0 0 .1875rem;
+}
+.agent-name .tld { color: var(--accent); }
 .agent-sub { font-size: .6875rem; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
 
-/* -- the recruiter end -- */
-.recruiter {
-  grid-column: 1 / -1;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
-  padding: .875rem;
+/* The pipeline's output node: a Chrome-style address bar naming the visitor's own page,
+   fed by a short live connector dropping in from the AI node above. This is the "hosted on
+   our domain" payoff — the graph resolves to an address, and the screen below shows it. */
+.flow .drop {
+  display: block; width: 2.5px; height: 1.75rem; margin: 0; flex: none;
+  position: relative; overflow: hidden; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
-@media (min-width: 960px) { .recruiter { grid-column: 4; grid-row: 1; } }
+.flow .drop::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 45%;
+  background: var(--accent); animation: travel-y 2.4s var(--ease) infinite;
+}
+.url-node {
+  display: inline-flex; align-items: center; gap: .5rem; max-width: 100%;
+  background: var(--raised); border: 1.5px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  border-radius: 14px; box-shadow: var(--shadow-md);
+  padding: .4375rem .5625rem;
+}
+.url-navs { display: inline-flex; align-items: center; gap: .375rem; flex: none; color: var(--muted); }
+.url-navs svg { width: 1rem; height: 1rem; }
+.url-omni {
+  display: inline-flex; align-items: center; gap: .5rem; min-width: 0;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
+  padding: .3125rem .6875rem;
+}
+.url-fav { width: .9375rem; height: .9375rem; flex: none; color: var(--accent); }
+.url-node-t {
+  font-size: clamp(.95rem, 2.6vw, 1.125rem); letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted);
+}
+.url-node-t b { color: var(--accent); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .flow .drop::after { animation: none; } }
+
+/* ---- The laptop: your page, on a screen --------------------------------
+   The diagram's endpoint is a MacBook-style laptop showing a browser at
+   you.hirees.me — your CV filling the screen with the assistant answering a
+   recruiter beside it, so it reads as a page you own that happens to answer,
+   not a detached chatbot. The chassis is a neutral space-grey so it reads as a
+   device in both themes; the screen inside is --surface, so the site on it still
+   follows light/dark. */
+.laptop { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; }
+
+.lid {
+  width: 100%;
+  background: color-mix(in srgb, var(--line), var(--text) 10%);   /* theme-aware: silver in light, dark in dark — never black on a white page */
+  border-radius: 12px 12px 5px 5px;
+  padding: .5rem .5rem .55rem;
+  box-shadow: var(--shadow-lg);
+}
+.screen { border-radius: 6px; overflow: hidden; background: var(--surface); }
+.screen .tabstrip { padding: .3125rem .4375rem 0; }
+.screen .toolbar { padding: .3125rem .5rem; }
+.screen .omnibox { padding: .1875rem .5rem; }
+
+/* CV on the left, the assistant on the right — equal panes, one fixed screen height. */
+/* Fixed row height with min 0 so the panes can't grow past the screen — the chat thread
+   scrolls inside instead of pushing the composer out under .screen's overflow:hidden. */
+.screen-panes { display: grid; grid-template-columns: 1.35fr 0.8fr; grid-template-rows: minmax(0, 1fr); height: 25.5rem; }
+
+/* The CV shown as a PDF in the browser: a grey viewer gutter with the résumé as a white
+   sheet floating on it (page shadow + document margins) — no literal "PDF" chrome, just
+   the look of a document open in a viewer. */
+.cv-pane { padding: 1rem; border-right: 1px solid var(--line); min-height: 0; overflow-y: auto; overflow-x: hidden; background: color-mix(in srgb, var(--surface), #000 16%); scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+.cv-page { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 6px 16px rgba(0,0,0,.12); padding: 1.125rem 1.0625rem; }
+.cv-pane::-webkit-scrollbar { width: 5px; }
+.cv-pane::-webkit-scrollbar-thumb { background: var(--line); border-radius: 999px; }
+/* Masthead — the single strongest "this is a CV" cue: a big name, the role and a contact
+   line beneath, and a rule under the lot. */
+.cv-head { padding-bottom: .75rem; margin-bottom: .375rem; border-bottom: 1.5px solid var(--line); }
+.cv-name { display: block; font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
+.cv-role { display: block; margin-top: .125rem; font-size: .75rem; color: var(--text); }
+.cv-contact { display: block; margin-top: .25rem; font-size: .625rem; color: var(--muted); }
+.cv-summary { margin: .8125rem 0 0; font-size: .6875rem; line-height: 1.55; color: var(--muted); }
+.cv-tags { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .5rem; }
+.cv-tags span {
+  font-size: .5625rem; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px; padding: .0625rem .375rem;
+}
+.cv-sec { margin-top: 1.125rem; font-size: .5625rem; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); font-weight: 600; }
+.cv-item { margin-top: .5rem; }
+/* Experience as a vertical timeline: a rail down the left with a node per role. */
+.cv-timeline { position: relative; padding-left: .9375rem; margin-top: .625rem; }
+.cv-timeline::before {
+  content: ''; position: absolute; left: 2.5px; top: 6px; bottom: 6px;
+  width: 1.5px; border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+.cv-timeline .cv-item { position: relative; margin-top: .75rem; }
+.cv-timeline .cv-item:first-child { margin-top: 0; }
+.cv-timeline .cv-item::before {
+  content: ''; position: absolute; top: 4px; left: -.9375rem;
+  width: 7px; height: 7px; box-sizing: border-box;
+  border-radius: 50%; background: var(--accent); border: 1.5px solid var(--surface);
+}
+.cv-item-h { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.cv-item-t { font-size: .6875rem; font-weight: 600; }
+.cv-item-y { font-size: .5625rem; color: var(--muted); flex: none; }
+.cv-item-d { margin-top: .0625rem; font-size: .625rem; color: var(--muted); line-height: 1.4; }
+.cv-open { margin-left: auto; align-self: flex-start; font-size: .5rem; font-weight: 500; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line)); border-radius: 999px; padding: .0625rem .375rem; white-space: nowrap; }
+.cv-bio { margin: .625rem 0 0; font-size: .625rem; line-height: 1.5; color: var(--muted); }
+
+.chat-pane { padding: .75rem; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; position: relative; }
+.chat-id {
+  display: flex; align-items: center; gap: .375rem;
+  font-size: .6875rem; font-weight: 500;
+  /* Elevated one step by tone, bled to the pane's edges like a title bar. A tint off the
+     pane's surface reads as distinct in both themes: lighter than the pane in dark, a touch
+     greyer in light (where nothing can go lighter than white). */
+  margin: -.75rem -.75rem .625rem;
+  padding: .5rem .75rem;
+  background: color-mix(in srgb, var(--surface), var(--text) 8%);
+  box-shadow: var(--shadow-sm);
+}
+.chat-pane .r-thread {
+  height: auto; flex: 1; min-height: 0; gap: 1.25rem;
+  /* Bottom-aligned so the newest turn sits just above the floating composer; older turns
+     rise and fade out under the header via the mask. The padding-bottom reserves room for
+     the floating composer so the last turn is never hidden behind it. */
+  justify-content: flex-end;
+  padding-bottom: 2.75rem;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 100%);
+}
+
+/* The composer floats over the thread's lower edge — an elevated pill on the raised plane
+   with a lift shadow — so the chat scrolls underneath it rather than being cut off by it. */
+.chat-pane .r-composer {
+  position: absolute;
+  left: .75rem; right: .75rem; bottom: .75rem;
+  margin-top: 0;
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+}
+
+/* The MacBook deck: a shallow body with the hinge notch, the keyboard the question types
+   on (#kb, flashed by the script as the recruiter writes), and a trackpad. */
+/* Monitor stand + a separate keyboard and mouse on the desk below it. */
+.laptop { gap: 0; }
+.stand-neck { display: block; width: 3rem; height: 1rem; background: color-mix(in srgb, var(--line), var(--text) 12%); }
+.stand-foot { display: block; width: 7rem; height: .4375rem; margin-bottom: 1rem; border-radius: 999px; background: color-mix(in srgb, var(--line), var(--text) 16%); box-shadow: var(--shadow-sm); }
+.desk { display: flex; align-items: flex-end; justify-content: center; gap: 0; width: 100%; }
+/* Phantom spacer = mouse + gap, mirrored on the left, so the keyboard is centred under the
+   screen (not the keyboard+mouse group) while the mouse still rides to its right. */
+.desk::before { content: ''; flex: 0 0 auto; width: 2.85rem; }
+.desk .kb { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--line), var(--text) 20%); background: color-mix(in srgb, var(--line), var(--text) 9%); border-radius: 9px; padding: .625rem .8125rem; gap: .25rem; }
+.desk .kb-row { gap: .25rem; }
+.desk .kb-row i { background: color-mix(in srgb, var(--line), var(--text) 42%); width: .9rem; height: .9rem; }
+.desk .kb-row i.md { width: 1.5rem; }
+.desk .kb-row i.wide { width: 4.4rem; }
+.desk .kb-row i.hit { background: var(--accent); }
+.desk .mouse { align-self: flex-end; width: 2.1rem; height: 3.2rem; margin-left: .75rem; }
+
+/* Mobile: stack the CV over the chat so neither is a sliver, and give the thread a fixed
+   height since the panes are no longer one fixed-height row. */
+@media (max-width: 620px) {
+  .screen-panes { grid-template-columns: 1fr; height: auto; }
+  .cv-pane { border-right: 0; border-bottom: 1px solid var(--line); }
+  .chat-pane .r-thread { height: 12rem; flex: none; }
+}
+
+/* -- the recruiter chat header (unused now the chat lives on the page) -- */
+@media (min-width: 960px) { .laptop { grid-column: 4; grid-row: 1; } }
 /* Header: a named person, so it's obviously a human on the other end rather than
    a label. An earlier version was just the word "RECRUITER" over two bubbles,
    which didn't read as a conversation at all. */
@@ -525,8 +759,11 @@ h1 em { font-style: normal; color: var(--accent); }
   /* Separates the visitor's question from the agent's turn below it. */
   gap: 1.75rem;
   /* The sources and their harness are their own group now, so this height doesn't
-     stretch the diagram — the only ceiling is the hero fitting one viewport. */
-  height: 26rem;
+     stretch the diagram — the only ceiling is the hero fitting one viewport. Kept short
+     enough that the whole diagram clears the fold at 1366×768 (the common laptop), not
+     only at taller windows. The browser chrome above the chat eats a little height too,
+     so keep this modest. */
+  height: 16rem;
   /* Really scrollable, so a visitor can read back through the conversation. The
      script only forces the view to the bottom while they're already there — scroll
      up and it stops yanking you back. */
@@ -784,28 +1021,54 @@ h2 {
   box-shadow: var(--shadow-md);
   overflow: hidden;
 }
-.chrome {
-  display: flex; align-items: center; gap: .75rem;
-  padding: .75rem 1rem;
-  border-bottom: 1px solid var(--line);
+/* Chrome-style browser chrome: a tab strip (traffic lights + active tab + new-tab) above a
+   toolbar (back / forward / reload · the omnibox · the ⋮ menu). */
+.chrome { border-bottom: 1px solid var(--line); background: var(--bg); box-shadow: var(--shadow-md); position: relative; z-index: 1; }
+.tabstrip { display: flex; align-items: flex-end; gap: .375rem; padding: .375rem .5rem 0; }
+.dots { display: flex; gap: .375rem; align-self: center; padding: 0 .25rem .3125rem 0; flex: none; }
+.dots i { width: .5rem; height: .5rem; border-radius: 999px; background: color-mix(in srgb, var(--line) 70%, var(--muted)); }
+.tab {
+  display: inline-flex; align-items: center; gap: .375rem; min-width: 0; max-width: 12rem;
+  background: var(--raised); border: 1px solid var(--line); border-bottom-color: var(--raised);
+  border-radius: 8px 8px 0 0; margin-bottom: -1px;
+  padding: .3125rem .5rem; font-size: .6875rem; color: var(--text);
 }
-.dots { display: flex; gap: .375rem; }
-.dots i {
-  width: .5rem; height: .5rem; border-radius: 999px;
-  background: color-mix(in srgb, var(--line) 70%, var(--muted));
-}
-.url {
-  flex: 1;
-  display: flex; align-items: center; gap: .5rem;
+.tab-fav { width: .8125rem; height: .8125rem; flex: none; color: var(--accent); }
+.tab-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-x { width: .6875rem; height: .6875rem; flex: none; color: var(--muted); }
+.newtab { width: .9375rem; height: .9375rem; flex: none; color: var(--muted); margin-bottom: .3125rem; }
+.toolbar { display: flex; align-items: center; gap: .5rem; padding: .375rem .625rem; background: var(--raised); }
+.navs { display: flex; align-items: center; gap: .3125rem; color: var(--muted); flex: none; }
+.navs svg { width: .9375rem; height: .9375rem; }
+.omnibox {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: .5rem;
   font-size: .75rem; color: var(--muted);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: .3125rem .75rem;
-  max-width: 20rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 999px;
+  padding: .25rem .625rem;
 }
-.url b { color: var(--text); font-weight: 500; }
+.omnibox b { color: var(--text); font-weight: 500; }
+.menu { width: .875rem; height: .875rem; flex: none; color: var(--muted); }
 .lock { width: .625rem; height: .625rem; flex: none; opacity: .55; }
+/* The address bar carries the "hosted on our domain" story: the personal subdomain in
+   accent (this address is theirs), and a pulsing Live tag (the page is published, online). */
+.omnibox .addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.omnibox .addr b { color: var(--accent); font-weight: 600; }
+.omnibox .live-tag {
+  margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: .3125rem;
+  font-size: .5625rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--accent);
+}
+.omnibox .live-dot {
+  width: .375rem; height: .375rem; border-radius: 999px; background: var(--accent);
+  animation: livePulse 2.2s ease-out infinite;
+}
+@keyframes livePulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent); }
+  70%  { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) { .omnibox .live-dot { animation: none; } }
+.lede .host-url { color: var(--accent); font-weight: 600; white-space: nowrap; }
 
 .panes { display: grid; grid-template-columns: 1fr; }
 @media (min-width: 860px) { .panes { grid-template-columns: 1.05fr .95fr; } }
@@ -924,6 +1187,49 @@ h2 {
 footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 .footer-inner { display: flex; flex-wrap: wrap; gap: .75rem; justify-content: space-between; align-items: center; font-size: .8125rem; color: var(--muted); }
 
+/* ---- Trusted-by strip ---------------------------------------------------
+   A quiet band of wordmarks straight after the hero — the conventional place
+   for proof. Wordmarks, not real logos: no third-party trademark is implied,
+   and they read as one calm row rather than a ransom note of clashing marks. */
+.trust { padding: 2.5rem 0; border-top: 1px solid var(--line); }
+.trust .label { text-align: center; }
+.trust-row {
+  margin-top: 1.25rem;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+  gap: 1rem 2.75rem;
+}
+.trust-row span {
+  font-family: var(--font-display);
+  font-size: 1.0625rem; font-weight: 600; letter-spacing: -.01em;
+  color: var(--muted); opacity: .85; white-space: nowrap;
+}
+
+/* ---- Testimonials -------------------------------------------------------
+   Three cards on the surface plane, hairline-bordered like every other card.
+   The quote marks are drawn in accent via ::before/::after so the body text
+   stays clean, and each card names a person so it reads as a voice, not a blurb. */
+.quotes { margin-top: 3rem; display: grid; gap: 1.25rem; }
+@media (min-width: 760px) { .quotes { grid-template-columns: repeat(3, 1fr); gap: 1.5rem; } }
+.quote {
+  margin: 0;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface); box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  display: flex; flex-direction: column;
+}
+.quote-text { margin: 0; font-size: .9375rem; line-height: 1.6; color: var(--text); flex: 1; }
+.quote-text::before { content: '“'; color: var(--accent); }
+.quote-text::after { content: '”'; color: var(--accent); }
+.quote figcaption { margin-top: 1.25rem; display: flex; align-items: center; gap: .625rem; }
+.quote-av {
+  width: 2rem; height: 2rem; flex: none; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg);
+  display: grid; place-items: center;
+  font-family: var(--font-display); font-size: .8125rem; color: var(--accent);
+}
+.quote-name { display: block; font-size: .8125rem; font-weight: 500; line-height: 1.25; }
+.quote-role { display: block; font-size: .75rem; color: var(--muted); }
+
 /* ---- Reduced motion: show the end state, animate nothing ---------------- */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -987,25 +1293,19 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
       <span>hirees<span class="tld">.me</span></span>
     </a>
     <div class="header-actions">
-      <div class="theme-toggle" id="theme-toggle" role="group" aria-label="Colour theme">
-        <button type="button" data-set="light" aria-pressed="false" title="Light" aria-label="Light">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <circle cx="12" cy="12" r="4.2"/>
-            <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
-          </svg>
-        </button>
-        <button type="button" data-set="system" aria-pressed="true" title="System" aria-label="System">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2.8" y="4.2" width="18.4" height="12" rx="2"/>
-            <path d="M8.6 20h6.8M12 16.2V20"/>
-          </svg>
-        </button>
-        <button type="button" data-set="dark" aria-pressed="false" title="Dark" aria-label="Dark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20.5 14.8A8.6 8.6 0 019.2 3.5a8.6 8.6 0 1011.3 11.3z"/>
-          </svg>
-        </button>
-      </div>
+      <nav class="nav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#reviews">Reviews</a>
+      </nav>
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.5 14.8A8.6 8.6 0 019.2 3.5a8.6 8.6 0 1011.3 11.3z"/>
+        </svg>
+      </button>
       <a href="#start" class="btn">Create your page</a>
     </div>
   </div>
@@ -1013,8 +1313,10 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 
 <!-- ==================== HERO ==================== -->
 <div class="hero">
-  <div class="wrap">
-    <p class="label enter" style="animation-delay:.02s">A portfolio page with an assistant</p>
+  <div class="wrap hero-2">
+    <!-- The agent → screen link is a plain CSS line on .stage-screen (no fragile SVG). -->
+    <div class="hero-copy">
+    <p class="label enter" style="animation-delay:.02s">Your own page on hirees.me</p>
 
     <h1>
       <span class="line"><span>Your first interview</span></span>
@@ -1022,27 +1324,116 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
     </h1>
 
     <p class="lede enter d1">
-      Someone is reading your CV right now, working from whatever they can infer.
-      hirees.me gives them somewhere to ask — and answers in your own words, day or night.
+      hirees.me gives you a page of your own — <span class="host-url">you.hirees.me</span> —
+      that recruiters can actually talk to. It answers from your CV, projects and notes, in
+      your own words, day or night. Someone's reading your CV right now; let them ask instead
+      of guess.
     </p>
 
     <div class="hero-actions enter d2">
       <a href="#start" class="btn-solid">Create your page</a>
       <a href="#how" class="btn">See how it works</a>
     </div>
+    </div><!-- /.hero-copy -->
 
-    <!-- The whole product in one look: your material feeds one agent, and a
-         recruiter talks to it. Decorative — the prose above carries the meaning,
-         so it's hidden from assistive tech rather than read out as a word salad. -->
+    <!-- Only the screen moves up here, into the hero's right, filling the empty space; a
+         cable runs down to the keyboard in the graph below. Hidden from assistive tech. -->
+    <div class="stage-screen" aria-hidden="true">
+      <div class="lid">
+        <div class="screen">
+          <div class="chrome">
+            <div class="tabstrip">
+              <span class="dots"><i></i><i></i><i></i></span>
+              <span class="tab">
+                <svg class="tab-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
+                <span class="tab-t">hirees.me</span>
+                <svg class="tab-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </span>
+              <svg class="newtab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <div class="toolbar">
+              <span class="navs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
+              </span>
+              <div class="omnibox">
+                <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+                <span class="addr"><b>you</b>.hirees.me</span>
+                <span class="live-tag"><span class="live-dot"></span>Live</span>
+              </div>
+              <svg class="menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </div>
+          </div>
+          <div class="screen-panes">
+            <div class="cv-pane">
+              <div class="cv-page">
+              <div class="cv-head">
+                <span class="cv-name">Maya Lindqvist</span>
+                <span class="cv-role">Senior Platform Engineer</span>
+                <span class="cv-contact">maya@hey.com · Berlin</span>
+              </div>
+
+              <p class="cv-summary">Builds and runs the platforms other teams ship on — Kubernetes, Go, and a great deal of Terraform.</p>
+
+              <div class="cv-sec">Experience</div>
+              <div class="cv-timeline">
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Staff Engineer · Northwind</span><span class="cv-item-y">2021–now</span></div>
+                  <div class="cv-item-d">Owns the platform behind 40+ services; cut deploys from 20 min to under 2.</div>
+                </div>
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Backend Engineer · Kesler</span><span class="cv-item-y">2018–2021</span></div>
+                  <div class="cv-item-d">Go payment services and the Terraform that provisions them.</div>
+                </div>
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Software Engineer · Vela</span><span class="cv-item-y">2015–2018</span></div>
+                  <div class="cv-item-d">Shipped the first billing API and its on-call runbooks.</div>
+                </div>
+              </div>
+
+              <div class="cv-sec">Skills</div>
+              <div class="cv-tags"><span>Kubernetes</span><span>Go</span><span>Terraform</span><span>Postgres</span><span>AWS</span></div>
+
+              <div class="cv-sec">Education</div>
+              <div class="cv-item">
+                <div class="cv-item-h"><span class="cv-item-t">B.Sc. Computer Science · TU Berlin</span><span class="cv-item-y">2015</span></div>
+              </div>
+              </div><!-- /.cv-page -->
+            </div>
+            <div class="chat-pane">
+              <div class="chat-id"><span class="live"></span> Maya's assistant</div>
+              <div class="r-thread" id="r-thread"></div>
+              <div class="r-composer">
+                <span class="r-typed" id="r-typed"></span><span class="caret"></span>
+                <span class="r-send" id="r-send">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19V5M6 11l6-6 6 6"/>
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="stand-neck"></span>
+      <span class="stand-foot"></span>
+      <div class="desk">
+        <div class="kb" id="kb">
+          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="kb-row"><i class="md"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="md"></i></div>
+          <div class="kb-row"><i class="md"></i><i class="wide"></i><i class="md"></i></div>
+        </div>
+        <div class="mouse" id="mouse"></div>
+      </div>
+    </div>
+
+    <!-- The graph sits under the hero: your material → the assistant → the keyboard you
+         type on. Decorative, hidden from assistive tech. -->
     <div class="flow enter d3" aria-hidden="true">
-      <div class="flow-grid">
-        <!-- Sources and their harness travel together, so the group sizes itself to
-             the four cards and the chat panel's height can't stretch them apart. -->
-        <div class="src-group">
-        <div class="sources">
-        <!-- Each icon depicts the artefact rather than gesturing at it: a résumé page
-             with a photo block and text lines, the GitHub mark, a stack of pages, and
-             a key/value list. At 21px these read faster than a generic glyph. -->
+      <!-- Square source tiles across the top, merging down into the agent below. -->
+      <div class="sources-row">
         <div class="node">
           <span class="node-ico">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
@@ -1052,22 +1443,14 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
               <path d="M6.8 13.2h10.4M6.8 15.8h10.4M6.8 18.4h6.2"/>
             </svg>
           </span>
-          <span>
-            <span class="node-t">Your CV</span>
-            <span class="node-d">PDF or Word — roles, skills, dates</span>
-          </span>
+          <span class="node-t">Your CV</span>
         </div>
 
         <div class="node">
-          <span class="node-ico">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"/>
-            </svg>
+          <span class="node-ico gh">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.235-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
           </span>
-          <span>
-            <span class="node-t">GitHub</span>
-            <span class="node-d">Your repositories and their READMEs</span>
-          </span>
+          <span class="node-t">GitHub</span>
         </div>
 
         <div class="node">
@@ -1079,10 +1462,17 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
               <path d="M7 13.4h6M7 16.4h4.2"/>
             </svg>
           </span>
-          <span>
-            <span class="node-t">Documents</span>
-            <span class="node-d">Cover letters, certificates, references</span>
+          <span class="node-t">Documents</span>
+        </div>
+
+        <div class="node">
+          <span class="node-ico">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3.5" y="5" width="17" height="14" rx="2"/>
+              <path d="M4.2 6.5l7.8 5.5 7.8-5.5"/>
+            </svg>
           </span>
+          <span class="node-t">Cover letter</span>
         </div>
 
         <div class="node">
@@ -1094,40 +1484,31 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
               <path d="M8.6 6.4h10.8M8.6 12h7.6M8.6 17.6h9.6"/>
             </svg>
           </span>
-          <span>
-            <span class="node-t">Facts</span>
-            <span class="node-d">Notice period, salary, visa, location</span>
-          </span>
+          <span class="node-t">Facts</span>
         </div>
 
-        </div><!-- /.sources -->
+      </div><!-- /.sources-row -->
 
-        <!-- Four stubs gather on a bus; a single trunk leaves it for the agent.
-             Stub y-positions are the centres of four equal bands (12.5 / 37.5 /
-             62.5 / 87.5), which is where the node cards sit once the row gap is 0. -->
-        <div class="harness">
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" fill="none"
-               stroke-width="2.5" stroke-linecap="round" vector-effect="non-scaling-stroke">
-            <g vector-effect="non-scaling-stroke">
-              <path class="h-base" pathLength="100" d="M0 12.5C22 12.5 33 50 55 50"/>
-              <path class="h-base" pathLength="100" d="M0 37.5C22 37.5 35 50 55 50"/>
-              <path class="h-base" pathLength="100" d="M0 62.5C22 62.5 35 50 55 50"/>
-              <path class="h-base" pathLength="100" d="M0 87.5C22 87.5 33 50 55 50"/>
-              <path class="h-trunk" pathLength="100" stroke-width="4" d="M55 50H100"/>
-
-              <path class="h-pulse" pathLength="100" d="M0 12.5C22 12.5 33 50 55 50"/>
-              <path class="h-pulse p2" pathLength="100" d="M0 37.5C22 37.5 35 50 55 50"/>
-              <path class="h-pulse p3" pathLength="100" d="M0 62.5C22 62.5 35 50 55 50"/>
-              <path class="h-pulse p4" pathLength="100" d="M0 87.5C22 87.5 33 50 55 50"/>
-              <path class="h-pulse p-trunk" pathLength="100" stroke-width="4" d="M55 50H100"/>
-            </g>
-          </svg>
-          <span class="junction"></span>
-        </div>
-        </div><!-- /.src-group -->
-        <div class="wire-out"></div>
-
-        <div class="vwire"></div>
+      <!-- Four tiles gather and a single trunk drops to the agent. -->
+      <div class="merge">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" fill="none" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke">
+          <g vector-effect="non-scaling-stroke">
+            <path class="h-base" pathLength="100" d="M10 0C10 24 50 40 50 58"/>
+            <path class="h-base" pathLength="100" d="M30 0C30 24 50 40 50 58"/>
+            <path class="h-base" pathLength="100" d="M50 0V58"/>
+            <path class="h-base" pathLength="100" d="M70 0C70 24 50 40 50 58"/>
+            <path class="h-base" pathLength="100" d="M90 0C90 24 50 40 50 58"/>
+            <path class="h-trunk" pathLength="100" stroke-width="3" d="M50 58V104"/>
+            <path class="h-pulse" pathLength="100" d="M10 0C10 24 50 40 50 58"/>
+            <path class="h-pulse p2" pathLength="100" d="M30 0C30 24 50 40 50 58"/>
+            <path class="h-pulse p3" pathLength="100" d="M50 0V58"/>
+            <path class="h-pulse p4" pathLength="100" d="M70 0C70 24 50 40 50 58"/>
+            <path class="h-pulse p5" pathLength="100" d="M90 0C90 24 50 40 50 58"/>
+            <path class="h-pulse p-trunk" pathLength="100" stroke-width="3" d="M50 58V104"/>
+          </g>
+        </svg>
+        <span class="junction"></span>
+      </div>
         <div class="agent">
           <div class="agent-mark">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -1145,53 +1526,45 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
               <path d="M9.2 15a3.2 3.2 0 005.6 0"/>
             </svg>
           </div>
+          <div class="agent-name">hirees<span class="tld">.me</span></div>
           <div class="agent-sub">reads · reasons · cites</div>
         </div>
 
-        <div class="vwire"></div>
-        <div class="recruiter">
-          <div class="r-head">
-            <span class="r-face">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="8" r="3.6"/>
-                <path d="M4.8 20.5a7.4 7.4 0 0114.4 0"/>
-              </svg>
-            </span>
-            <span>
-              <span class="r-who">A recruiter</span>
-              <span class="r-role">asking, right now</span>
-            </span>
-            <span class="r-status"><span class="live"></span> live</span>
-          </div>
-
-          <!-- Turns are built by the script: each question is typed below, sent, and
-               answered, so the thread is one continuous conversation. -->
-          <div class="r-thread" id="r-thread"></div>
-
-          <!-- Their next question, typing itself, with the keyboard flickering along. -->
-          <div class="r-composer">
-            <span class="r-typed" id="r-typed"></span><span class="caret"></span>
-            <span class="r-send" id="r-send">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 19V5M6 11l6-6 6 6"/>
-              </svg>
-            </span>
-          </div>
-          <div class="r-desk">
-            <div class="kb" id="kb">
-              <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-              <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-              <div class="kb-row"><i class="md"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="md"></i></div>
-              <div class="kb-row"><i class="md"></i><i class="wide"></i><i class="md"></i></div>
-            </div>
-            <div class="mouse" id="mouse"></div>
-          </div>
+        <!-- The pipeline's output: the candidate's own live address on our domain. Styled
+             like a Chrome address bar; it names the page the screen below is showing. -->
+        <span class="drop" aria-hidden="true"></span>
+        <div class="url-node" aria-hidden="true">
+          <span class="url-navs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
+          </span>
+          <span class="url-omni">
+            <svg class="url-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
+            <span class="url-node-t"><b>your-username</b>.hirees.me</span>
+          </span>
         </div>
-      </div>
 
     </div>
   </div>
 </div>
+
+<!-- ==================== TRUSTED BY ==================== -->
+<!-- PLACEHOLDER social proof: the companies below are FICTIONAL. Swap for real
+     customers/logos (or remove) before this goes public — a "trusted by" of names that
+     don't use the product is a false claim to a real visitor. -->
+<section class="trust">
+  <div class="wrap">
+    <p class="label reveal">Trusted by people hiring and getting hired at</p>
+    <div class="trust-row reveal">
+      <span>Northwind</span>
+      <span>Lumen&nbsp;Labs</span>
+      <span>Halden&nbsp;&amp;&nbsp;Vaughn</span>
+      <span>Verata</span>
+      <span>Söderberg</span>
+    </div>
+  </div>
+</section>
 
 <!-- ==================== THE DEMO ==================== -->
 <hr class="rule">
@@ -1207,10 +1580,27 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
     <div class="demo reveal">
       <div class="window">
         <div class="chrome">
-          <div class="dots"><i></i><i></i><i></i></div>
-          <div class="url">
-            <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
-            <span><b>maya.hirees.me</b></span>
+          <div class="tabstrip">
+            <span class="dots"><i></i><i></i><i></i></span>
+            <span class="tab">
+              <svg class="tab-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
+              <span class="tab-t">Maya Lindqvist</span>
+              <svg class="tab-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </span>
+            <svg class="newtab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+          <div class="toolbar">
+            <span class="navs">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
+            </span>
+            <div class="omnibox">
+              <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+              <span class="addr"><b>maya</b>.hirees.me</span>
+              <span class="live-tag"><span class="live-dot"></span>Live</span>
+            </div>
+            <svg class="menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
           </div>
         </div>
 
@@ -1322,6 +1712,52 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
   </div>
 </section>
 
+<!-- ==================== TESTIMONIALS ==================== -->
+<!-- PLACEHOLDER: the people and quotes below are FICTIONAL. Replace with real, consented
+     testimonials before launch — invented reviews presented as genuine mislead visitors. -->
+<hr class="rule">
+<section id="reviews">
+  <div class="wrap">
+    <p class="label reveal">What they're saying</p>
+    <h2 class="reveal">Recruiters stop guessing. You stop repeating yourself.</h2>
+
+    <div class="quotes">
+      <figure class="quote reveal">
+        <blockquote class="quote-text">I put the link at the top of every application. Two recruiters told me they'd had their questions answered before we ever spoke.</blockquote>
+        <figcaption>
+          <span class="quote-av">NE</span>
+          <span>
+            <span class="quote-name">Nadia El-Amrani</span>
+            <span class="quote-role">Backend Engineer · Northwind</span>
+          </span>
+        </figcaption>
+      </figure>
+
+      <figure class="quote reveal">
+        <blockquote class="quote-text">The first candidate page I've actually used. I asked about notice period and their stack at 11pm and got straight, sourced answers.</blockquote>
+        <figcaption>
+          <span class="quote-av">TR</span>
+          <span>
+            <span class="quote-name">Tomas Reinholt</span>
+            <span class="quote-role">Talent Lead · Lumen Labs</span>
+          </span>
+        </figcaption>
+      </figure>
+
+      <figure class="quote reveal">
+        <blockquote class="quote-text">One PDF and about a minute. It answers exactly what I would — and nothing I wouldn't.</blockquote>
+        <figcaption>
+          <span class="quote-av">PG</span>
+          <span>
+            <span class="quote-name">Priya Ganguly</span>
+            <span class="quote-role">Product Designer · Verata</span>
+          </span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
 <!-- ==================== CLOSING ==================== -->
 <hr class="rule">
 <section class="closing" id="start">
@@ -1353,36 +1789,25 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
      data-theme attribute means the palette follows prefers-color-scheme.
      ---------------------------------------------------------------------- */
   (function theme() {
-    var group = document.getElementById('theme-toggle');
-    if (!group) return;
-    var buttons = [].slice.call(group.querySelectorAll('button'));
-
-    function read() {
-      try {
-        var saved = localStorage.getItem('theme');
-        return saved === 'light' || saved === 'dark' ? saved : 'system';
-      } catch (e) { return 'system'; }
+    var btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    function effective() {
+      var dt = document.documentElement.getAttribute('data-theme');
+      if (dt === 'light' || dt === 'dark') return dt;
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
-
-    function apply(mode) {
-      if (mode === 'system') {
-        document.documentElement.removeAttribute('data-theme');
-      } else {
-        document.documentElement.setAttribute('data-theme', mode);
-      }
-      buttons.forEach(function (b) {
-        b.setAttribute('aria-pressed', String(b.dataset.set === mode));
-      });
-      try {
-        if (mode === 'system') localStorage.removeItem('theme');
-        else localStorage.setItem('theme', mode);
-      } catch (e) { /* private mode: the choice just won't persist */ }
+    function render() {
+      var mode = effective();
+      btn.setAttribute('data-theme', mode);
+      btn.setAttribute('aria-label', mode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
     }
-
-    buttons.forEach(function (b) {
-      b.addEventListener('click', function () { apply(b.dataset.set); });
+    btn.addEventListener('click', function () {
+      var next = effective() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('theme', next); } catch (e) { /* private mode */ }
+      render();
     });
-    apply(read());
+    render();
   })();
 
   /* ---- Scroll reveal — same contract as the portfolio site's .reveal ---- */
@@ -1476,7 +1901,11 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
       return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 24;
     }
     thread.addEventListener('scroll', function () { stick = atBottom(); });
-    function follow() { if (stick) thread.scrollTop = thread.scrollHeight; }
+    // Always pin to the newest message. This is a decorative, non-interactive mock, so
+    // there's no user scroll position to preserve — and the old "only if at the bottom"
+    // guard raced during fast streaming (a scroll event fired after more text was appended,
+    // wrongly cleared the flag), which stopped the follow and clipped the rest of the answer.
+    function follow() { thread.scrollTop = thread.scrollHeight; }
 
     // Bounded history: enough to scroll back through, not an unbounded DOM.
     function trim() {
@@ -1806,5 +2235,6 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
   run();
 })();
 </script>
+
 </body>
 </html>
