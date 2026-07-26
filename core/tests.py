@@ -260,8 +260,10 @@ def test_signin_configured_provider_posts_to_allauth_login():
 
 
 @pytest.mark.django_db
-def test_signin_redirects_an_authenticated_user_onward():
-    """Someone already signed in has no reason to see the sign-in page."""
+def test_signin_redirects_an_authenticated_user_to_the_dashboard_spa():
+    """Someone already signed in has no reason to see the sign-in page — they're sent to the
+    dashboard SPA (app.hirees.me), the same destination as after a fresh sign-in."""
+    from django.conf import settings
     from django.contrib.auth.models import User
 
     user = User.objects.create_user(username="u", password="p")  # noqa: S106 — test-only
@@ -269,39 +271,39 @@ def test_signin_redirects_an_authenticated_user_onward():
     client.force_login(user)
     response = client.get("/signin")
     assert response.status_code == 302
+    assert response["Location"] == settings.LOGIN_REDIRECT_URL == settings.APP_URL
 
 
-# --- Dashboard stub (the signed-in destination) ---------------------------
-
-
-@pytest.mark.django_db
-def test_dashboard_requires_login():
-    """/app is the signed-in area — an anonymous visitor is sent to /signin."""
-    response = Client().get("/app")
-    assert response.status_code == 302
-    assert "/signin" in response["Location"]
+# --- Session endpoint (/api/me) -------------------------------------------
+# The dashboard is a separate SPA (app.hirees.me) with no sign-in UI of its own: it calls
+# /api/me to learn whether this browser has a backend session, and bounces to /signin if not.
 
 
 @pytest.mark.django_db
-def test_dashboard_greets_the_user_and_offers_sign_out():
-    """Signed in, the stub greets the user by their account email and posts a sign-out form
-    to allauth's logout — the far end of the loop we're proving works."""
+def test_me_reports_anonymous_when_signed_out():
+    """No session → the SPA's gate reads authenticated:false and redirects to /signin."""
+    response = Client().get("/api/me")
+    assert response.status_code == 200
+    assert response.json() == {"authenticated": False, "email": "", "display": ""}
+
+
+@pytest.mark.django_db
+def test_me_reports_the_signed_in_user():
+    """A live session reports the user, so the SPA renders instead of redirecting."""
     from django.contrib.auth.models import User
 
     user = User.objects.create_user(username="jo", email="jo@example.com", password="p")  # noqa: S106
     client = Client()
     client.force_login(user)
-    body = client.get("/app").content.decode()
-    assert "You're in" in body
-    assert "jo@example.com" in body
-    assert 'action="/accounts/logout/"' in body  # the sign-out form
-    assert "csrfmiddlewaretoken" in body
+    body = client.get("/api/me").json()
+    assert body["authenticated"] is True
+    assert body["email"] == "jo@example.com"
 
 
 def test_social_signup_does_not_require_email_so_github_never_stalls():
     """GitHub returns no email for private-email users; requiring one would strand them on
-    allauth's default signup page. These settings keep social sign-in auto-completing to /app
-    (the address is still captured when the provider supplies it)."""
+    allauth's default signup page. These settings keep social sign-in auto-completing to the
+    dashboard SPA (the address is still captured when the provider supplies it)."""
     from django.conf import settings
 
     assert settings.SOCIALACCOUNT_EMAIL_REQUIRED is False

@@ -130,12 +130,22 @@ USE_TZ = True
 # The frontend (GitHub Pages) calls this API cross-origin, so its origin must be allowed.
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:4321,https://souhaibbenfarhat.github.io",
+    # localhost:4321 = the Astro site (dev); localhost:5173 = the dashboard SPA (Vite dev);
+    # app.hirees.me = the deployed dashboard SPA, which calls this backend with credentials.
+    "http://localhost:4321,http://localhost:5173,"
+    "https://souhaibbenfarhat.github.io,https://app.hirees.me",
 )
 CORS_ALLOW_ALL_ORIGINS = env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
-# The dashboard SPA signs in with credentials (allauth session cookie or token), so
-# cross-origin requests from app.hirees.me must be allowed to carry them.
+# The dashboard SPA reads the backend session cross-origin (credentials: 'include'), so the
+# response must be allowed to carry credentials for its origin.
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", default=True)
+# Cross-origin POSTs from the SPA (same-site: app.hirees.me → hirees.me) need their origin
+# trusted for Django's CSRF check on unsafe methods. GET /api/me doesn't, but chat/rating
+# POSTs from the SPA will — trust them here now.
+CSRF_TRUSTED_ORIGINS = env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    "http://localhost:5173,https://hirees.me,https://app.hirees.me",
+)
 
 # --- Authentication / social login (allauth) ------------------------------
 # Users sign in with Google, GitHub, or LinkedIn (self-hosted via django-allauth). The client
@@ -147,6 +157,12 @@ SITE_ID = 1
 
 # Where allauth redirects the browser after a social round-trip — the dashboard SPA's base.
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4321")
+
+# The dashboard SPA (a separate Render Static Site at app.hirees.me). The backend owns all
+# auth: after sign-in it redirects here, and the SPA — which has NO sign-in UI of its own —
+# gates on the backend session and bounces unauthenticated visitors back to /signin. Point
+# this at http://localhost:5173 for local SPA dev. See docs/auth.md.
+APP_URL = os.getenv("APP_URL", "https://app.hirees.me")
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",  # admin / staff login
@@ -174,9 +190,10 @@ SOCIALACCOUNT_AUTO_SIGNUP = True
 # separate SPA (Phase 4) it can flip to headless — the /_allauth/ API is already mounted.
 HEADLESS_ONLY = env_bool("HEADLESS_ONLY", default=False)
 HEADLESS_FRONTEND_URLS = {"socialaccount_login_error": f"{FRONTEND_URL}/auth/error"}
-# After sign-in land on the dashboard; @login_required sends anonymous visitors to /signin;
-# after sign-out return to the public landing.
-LOGIN_REDIRECT_URL = "/app"
+# After sign-in, land on the dashboard SPA (app.hirees.me). LOGIN_URL is the backend's own
+# Django sign-in page — where the SPA sends unauthenticated visitors — and sign-out returns to
+# the public landing.
+LOGIN_REDIRECT_URL = APP_URL
 LOGIN_URL = "/signin"
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
 

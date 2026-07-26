@@ -22,6 +22,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/ServiceDescriptor'
           description: ''
+  /api/me:
+    get:
+      operationId: api_me_retrieve
+      description: Whether this browser holds a signed-in backend session, and who
+        it belongs to. The dashboard SPA (app.hirees.me) has no sign-in UI of its
+        own — it calls this endpoint with credentials to gate itself, and sends the
+        visitor to the backend's /signin when the response is unauthenticated. Always
+        200; read the `authenticated` flag.
+      summary: Current session
+      tags:
+      - api
+      security:
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+          description: ''
   /chat/conversations/{conversation_id}/:
     get:
       operationId: chat_conversations_retrieve
@@ -226,6 +247,24 @@ components:
           description: Always "ok" when the service is live.
       required:
       - status
+    Me:
+      type: object
+      description: The current backend session, read by the dashboard SPA to gate
+        itself.
+      properties:
+        authenticated:
+          type: boolean
+          description: True when this browser holds a signed-in backend session.
+        email:
+          type: string
+          description: The signed-in user's email, or empty when anonymous.
+        display:
+          type: string
+          description: A display name for the signed-in user, or empty when anonymous.
+      required:
+      - authenticated
+      - display
+      - email
     Message:
       type: object
       properties:
@@ -304,6 +343,8 @@ components:
           type: string
         health:
           type: string
+        me:
+          type: string
         docs:
           type: string
         schema:
@@ -318,6 +359,7 @@ components:
       - docs
       - health
       - landing
+      - me
       - schema
     ChatStreamRequest:
       type: object
@@ -454,6 +496,11 @@ components:
       - $ref: '#/components/schemas/ChatErrorFrame'
       - $ref: '#/components/schemas/ChatDoneFrame'
       description: One Server-Sent Events frame. Each `data:` line is one of these.
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
 servers:
 - url: https://portfolio-backend-2huw.onrender.com
   description: Production

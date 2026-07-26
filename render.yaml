@@ -29,10 +29,12 @@ services:
         generateValue: true # Render generates a strong value, kept out of the repo
       - key: DEBUG
         value: "false"
-      - key: ALLOWED_HOSTS
-        value: ".onrender.com"
-      - key: CORS_ALLOWED_ORIGINS
-        value: "https://souhaibbenfarhat.github.io"
+      - key: ALLOWED_HOSTS # the leading dot covers hirees.me and every tenant subdomain
+        value: ".onrender.com,.hirees.me"
+      - key: CORS_ALLOWED_ORIGINS # the Astro site + the dashboard SPA (app.hirees.me)
+        value: "https://souhaibbenfarhat.github.io,https://app.hirees.me"
+      - key: APP_URL # where the backend redirects the browser after sign-in (the dashboard SPA)
+        value: "https://app.hirees.me"
       - key: DATABASE_URL # Postgres connection string, injected from the DB below
         fromDatabase:
           name: portfolio-db
