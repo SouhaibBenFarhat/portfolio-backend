@@ -58,6 +58,22 @@ services:
         value: "SouhaibBenFarhat"
       - key: GITHUB_TOKEN # optional secret — lifts the GitHub API rate limit
         sync: false
+      # Email (Brevo SMTP, EU free tier): the verification code + password-reset mail. Without
+      # EMAIL_HOST the app uses the console backend and sends nothing, so these must be set for
+      # email sign-up to work in production. EMAIL_HOST_USER/PASSWORD are the Brevo SMTP
+      # credentials; DEFAULT_FROM_EMAIL must be a sender verified on hirees.me. See docs/auth.md.
+      - key: EMAIL_HOST
+        value: "smtp-relay.brevo.com"
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "true"
+      - key: EMAIL_HOST_USER # Brevo SMTP login — secret (set in the dashboard)
+        sync: false
+      - key: EMAIL_HOST_PASSWORD # Brevo SMTP key — secret (set in the dashboard)
+        sync: false
+      - key: DEFAULT_FROM_EMAIL # a sender verified on the hirees.me domain (SPF/DKIM)
+        value: "hirees.me <no-reply@hirees.me>"
 
 # Managed Postgres for chat persistence (conversations, facts). Free plan.
 # NOTE: Render's free Postgres expires after a limited window — to keep the DB

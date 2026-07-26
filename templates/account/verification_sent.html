@@ -1,0 +1,8 @@
+{% extends "allauth/layouts/base.html" %}
+{% comment %}Shown if allauth reports "verification email sent" without routing straight to the
+code page. The by-code flow's main page is confirm_email_verification_code.html.{% endcomment %}
+{% block head_title %}Verify your email{% endblock %}
+{% block content %}
+  <h1>Check your email</h1>
+  <p>We've sent you a verification code. Enter it to confirm your address and finish signing in.</p>
+{% endblock %}

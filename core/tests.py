@@ -1,5 +1,8 @@
+import re
+
 import pytest
 import yaml
+from django.core import mail
 from django.test import Client
 from django.urls import reverse
 
@@ -328,3 +331,146 @@ def test_allauth_pages_inherit_the_styled_base_layout():
     origin = get_template("allauth/layouts/base.html").origin.name
     assert "templates/allauth/layouts/base.html" in origin
     assert "site-packages/allauth" not in origin
+
+
+# --- Email + password sign-up with code verification ----------------------
+# A visitor without a social account can register with an email + password. allauth emails a
+# short CODE (not a magic link); the account stays unusable — and never reaches app.hirees.me —
+# until the code is entered. Django swaps in the locmem email backend for tests, so the code is
+# read straight from mail.outbox.
+
+_STRONG_PASSWORD = "Zephyr-Vault-92"  # noqa: S105 — test-only; clears AUTH_PASSWORD_VALIDATORS
+_CODE_RE = re.compile(r"[A-Z]{4}-[A-Z]{4}")  # allauth's dashed 8-char verification code
+
+
+def _verified_user(email="member@example.com", *, verified=True):
+    """A user with a password and an allauth EmailAddress, verified by default."""
+    from allauth.account.models import EmailAddress
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username=email, email=email, password=_STRONG_PASSWORD)  # noqa: S106
+    EmailAddress.objects.create(user=user, email=email, verified=verified, primary=True)
+    return user
+
+
+def _signup(client, email):
+    return client.post(
+        reverse("account_signup"),
+        {"email": email, "password1": _STRONG_PASSWORD, "password2": _STRONG_PASSWORD},
+    )
+
+
+def test_email_verification_is_mandatory_and_by_code():
+    """The settings that make the flow safe: local sign-ups must verify, by a code, while
+    social stays exempt (its email is already provider-verified)."""
+    from django.conf import settings
+
+    assert settings.ACCOUNT_EMAIL_VERIFICATION == "mandatory"
+    assert settings.ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED is True
+    assert settings.SOCIALACCOUNT_EMAIL_VERIFICATION == "none"
+    assert "password1*" in settings.ACCOUNT_SIGNUP_FIELDS
+
+
+def test_password_signup_emails_a_code_and_does_not_sign_in_yet():
+    """Registering sends one code email and does NOT drop the visitor on the dashboard — the
+    account isn't usable until the address is confirmed."""
+    from django.conf import settings
+
+    client = Client()
+    response = _signup(client, "newbie@example.com")
+    assert response.status_code == 302
+    assert settings.APP_URL not in response["Location"]  # not sent to the app yet
+    assert len(mail.outbox) == 1
+    assert _CODE_RE.search(mail.outbox[0].body)  # the email carries a code
+    assert client.get("/api/me").json()["authenticated"] is False  # still anonymous
+
+
+def test_entering_the_code_verifies_and_redirects_to_the_dashboard():
+    """The whole point: only after the emailed code is confirmed is the user logged in and
+    sent to app.hirees.me (LOGIN_REDIRECT_URL = APP_URL)."""
+    from allauth.account.models import EmailAddress
+    from django.conf import settings
+
+    client = Client()
+    _signup(client, "grace@example.com")
+    code = _CODE_RE.search(mail.outbox[0].body).group()
+    response = client.post(reverse("account_email_verification_sent"), {"code": code})
+    assert response.status_code == 302
+    assert response["Location"] == settings.APP_URL
+    assert EmailAddress.objects.get(email="grace@example.com").verified is True
+    assert client.get("/api/me").json()["authenticated"] is True
+
+
+def test_a_wrong_code_does_not_verify_or_sign_in():
+    """A bad code leaves the address unverified and the visitor off the dashboard."""
+    from allauth.account.models import EmailAddress
+    from django.conf import settings
+
+    client = Client()
+    _signup(client, "mallory@example.com")
+    response = client.post(reverse("account_email_verification_sent"), {"code": "ZZZZ-ZZZZ"})
+    assert settings.APP_URL not in response.get("Location", "")
+    assert EmailAddress.objects.get(email="mallory@example.com").verified is False
+
+
+def test_unverified_login_is_bounced_to_verification_not_the_app():
+    """An account that never confirmed its email can't sign in to the dashboard — the login is
+    diverted back to verification, so an unverified address never reaches app.hirees.me."""
+    from django.conf import settings
+
+    _verified_user(email="pending@example.com", verified=False)
+    response = Client().post(
+        reverse("account_login"),
+        {"login": "pending@example.com", "password": _STRONG_PASSWORD},
+    )
+    assert response.status_code == 302
+    assert settings.APP_URL not in response["Location"]
+
+
+def test_a_weak_password_is_rejected():
+    """AUTH_PASSWORD_VALIDATORS (added with this flow) block a trivial password: no account is
+    created and no code is sent."""
+    from django.contrib.auth.models import User
+
+    response = Client().post(
+        reverse("account_signup"),
+        {"email": "weak@example.com", "password1": "1234", "password2": "1234"},
+    )
+    assert response.status_code == 200  # form redisplayed with errors
+    assert not User.objects.filter(email="weak@example.com").exists()
+    assert mail.outbox == []
+
+
+def test_password_reset_emails_a_link():
+    """Forgot-password sends a reset email to an existing account."""
+    _verified_user(email="forgetful@example.com")
+    response = Client().post(reverse("account_reset_password"), {"email": "forgetful@example.com"})
+    assert response.status_code == 302
+    assert len(mail.outbox) == 1
+    assert "http" in mail.outbox[0].body  # a reset link
+
+
+def test_signin_hub_offers_email_and_a_create_account_link():
+    """The /signin hub carries the email+password form and a link to register, beside the
+    social buttons."""
+    body = Client().get("/signin").content.decode()
+    assert 'name="login"' in body
+    assert 'name="password"' in body
+    assert 'action="/accounts/login/"' in body
+    assert "Create an account" in body
+    assert 'href="/accounts/signup/"' in body
+
+
+def test_email_auth_pages_use_our_themed_templates():
+    """login, signup, and the code-entry page render our templates, not allauth's bare
+    defaults."""
+    from django.template.loader import get_template
+
+    for name in (
+        "account/login.html",
+        "account/signup.html",
+        "account/confirm_email_verification_code.html",
+    ):
+        origin = get_template(name).origin.name
+        assert "site-packages/allauth" not in origin, name
+        assert "/templates/account/" in origin, name

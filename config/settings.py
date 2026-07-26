@@ -169,18 +169,43 @@ AUTHENTICATION_BACKENDS = [
     "allauth.account.auth_backends.AuthenticationBackend",  # social + email login
 ]
 
-# Social-first: email is the identifier (no username), and social accounts arrive verified
-# so there's no email-confirmation step. New-style allauth 65 settings — the pre-65
-# ACCOUNT_EMAIL_REQUIRED / ACCOUNT_USERNAME_REQUIRED names are deprecated.
+# Email is the identifier (no username). Two ways in, side by side:
+#  - Social (Google/GitHub/LinkedIn): the account arrives with a provider-verified email, so
+#    it's exempt from our verification step (SOCIALACCOUNT_EMAIL_VERIFICATION="none" below).
+#  - Email + password: the visitor sets a password and must prove the address is real before
+#    the account works — the mandatory by-code verification below.
+# New-style allauth 65 settings — the pre-65 ACCOUNT_EMAIL_REQUIRED / ACCOUNT_USERNAME_REQUIRED
+# names are deprecated.
 ACCOUNT_LOGIN_METHODS = {"email"}
-ACCOUNT_SIGNUP_FIELDS = ["email*"]
-ACCOUNT_EMAIL_VERIFICATION = "none"
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+
+# Local (email+password) sign-ups must confirm their address before the account is usable.
+# allauth emails a short CODE (not a magic link) that the visitor types back, so a fake or
+# mistyped address can never reach the product and an unverified login is bounced to the code
+# page rather than to APP_URL. Social stays exempt (its email is already provider-verified),
+# so the one-click social flow is unchanged.
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 SOCIALACCOUNT_EMAIL_VERIFICATION = "none"
+ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED = True
+ACCOUNT_EMAIL_VERIFICATION_BY_CODE_MAX_ATTEMPTS = 3  # wrong-code tries before the code is void
+ACCOUNT_EMAIL_VERIFICATION_BY_CODE_TIMEOUT = 15 * 60  # seconds a code stays valid
+ACCOUNT_EMAIL_SUBJECT_PREFIX = ""  # no "[example.com]" prefix on our transactional mail
+
+# Abuse caps on the public auth endpoints, merged over allauth's already-sane defaults: cap
+# mass fake-account creation, brute force against a known email, and code-resend spamming.
+# This is the cost/anti-scammer control layered on top of the verification code itself.
+ACCOUNT_RATE_LIMITS = {
+    "signup": "10/m/ip",
+    "login_failed": "5/5m/key",
+    "confirm_email": "1/30s/key",  # cooldown between code (re)sends
+    "reset_password": "5/m/ip,3/m/key",
+}
+
 # GitHub returns no email for users whose email is private; a required email would then stall
-# them on allauth's default "complete signup" page instead of landing on /app. Don't require
-# email for social sign-in — auto-create the account from whatever the provider gives (allauth
-# still pulls the address from GitHub's /user/emails when the user:email scope grants it), so
-# the flow completes straight through. (Phase 2, multi-tenancy, revisits email as identifier.)
+# them on allauth's default "complete signup" page instead of landing on the dashboard. Don't
+# require email for social sign-in — auto-create the account from whatever the provider gives
+# (allauth still pulls the address from GitHub's /user/emails when the user:email scope grants
+# it), so the flow completes straight through. (Phase 2, multi-tenancy, revisits identity.)
 SOCIALACCOUNT_EMAIL_REQUIRED = False
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
@@ -209,6 +234,36 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 # Feed allauth its apps from the encrypted OAuthCredential model rather than env/plaintext.
 SOCIALACCOUNT_ADAPTER = "core.adapter.SocialAccountAdapter"
+
+# Password strength for email+password sign-ups (Django's standard validators). There was no
+# reason for these before — social sign-ups set no password — so they're added with this flow.
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# --- Email ----------------------------------------------------------------
+# Transactional mail: the verification code and password-reset links. Brevo (EU, free tier)
+# over SMTP in production, configured from env vars. When EMAIL_HOST is unset the console
+# backend prints the message to the server log instead — so the verification code is readable
+# in local dev with zero setup, and no real mail is sent until Brevo is wired.
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", default=True)
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_BACKEND = (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.console.EmailBackend"
+)
+# One async worker sends this inline during the request, so don't let a slow SMTP server hang
+# it. From address stays on the hirees.me domain so DKIM/SPF align (see docs/auth.md).
+EMAIL_TIMEOUT = 10
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "hirees.me <no-reply@hirees.me>")
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # --- AI chat --------------------------------------------------------------
 # LiteLLM model ids. The chat tries CHAT_MODEL first; if it fails (e.g. a free-tier

@@ -1,0 +1,10 @@
+{% autoescape off %}Hi,
+
+Thanks for signing up for hirees.me. Enter this verification code in your open browser window to confirm your email address:
+
+{% if code %}{{ code }}{% else %}{{ activate_url }}{% endif %}
+
+The code expires in 15 minutes. If you didn't create a hirees.me account, you can safely ignore this email — no account is created without it.
+
+— hirees.me
+{% endautoescape %}

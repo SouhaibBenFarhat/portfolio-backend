@@ -23,16 +23,18 @@ and manage it from a React dashboard. Recruiters chat with any user's hosted pag
 
 ## Phases (one branch each, squash-merged)
 
-### Phase 1 — Accounts + social login (backend) ← building now
+### Phase 1 — Accounts + sign-in (backend) — DONE
 - Install `django-allauth` + `allauth.headless` + `django.contrib.sites`.
-- Wire Google / GitHub / LinkedIn, credentials read from env (`*_CLIENT_ID` / `*_SECRET`),
-  falling back gracefully when unset (a provider with no key just isn't offered).
+- Wire Google / GitHub / LinkedIn; provider credentials are **encrypted in the admin**
+  (`OAuthCredential` / `core.adapter`), not env vars — an unconfigured provider just isn't offered.
+- **Email + password** registration/login with **mandatory email verification by code** (allauth's
+  by-code flow; Brevo SMTP, EU) — the account only reaches `app.hirees.me` once the emailed code is
+  confirmed. Themed allauth pages, password reset + change, anti-abuse rate limits. See `docs/auth.md`.
 - Expose headless endpoints for the SPA (`/_allauth/…`) + the provider callback routes
   (`/accounts/<provider>/login/callback/`) the OAuth apps already point at.
-- Token auth for the "app" client so the cross-subdomain SPA never needs a shared cookie.
-- **No tenancy yet** — existing content stays global; this phase only proves users can sign
-  in and the backend issues a session/token. Tests for the flow. CI stays green (allauth
-  endpoints aren't DRF, so `openapi.yaml` doesn't change).
+- The dashboard SPA gate is a session cookie + `GET /api/me` (#53), not token auth (see `docs/auth.md`).
+- **No tenancy yet** — existing content stays global. Tests cover both flows; CI stays green (the
+  only DRF addition was `/api/me`, already in `openapi.yaml`).
 
 ### Phase 2 — Tenancy / ownership (backend, the real foundation)
 - `Profile` (1:1 `User`) with a unique **handle** (their public-page slug).
