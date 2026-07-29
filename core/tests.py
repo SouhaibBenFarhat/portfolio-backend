@@ -462,15 +462,33 @@ def test_signin_hub_offers_email_and_a_create_account_link():
 
 
 def test_email_auth_pages_use_our_themed_templates():
-    """login, signup, and the code-entry page render our templates, not allauth's bare
-    defaults."""
+    """login, signup, the code-entry page, and logout render our templates, not allauth's
+    bare defaults."""
     from django.template.loader import get_template
 
     for name in (
         "account/login.html",
         "account/signup.html",
         "account/confirm_email_verification_code.html",
+        "account/logout.html",
     ):
         origin = get_template(name).origin.name
         assert "site-packages/allauth" not in origin, name
         assert "/templates/account/" in origin, name
+
+
+@pytest.mark.django_db
+def test_logout_page_renders_a_themed_button():
+    """The sign-out confirmation renders in our themed card with the site's .btn button,
+    not allauth's bare default one."""
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="bye", password="p")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(user)
+    response = client.get(reverse("account_logout"))
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert 'class="btn"' in body  # the site's button style
+    assert 'action="/accounts/logout/"' in body
+    assert "Sign out" in body

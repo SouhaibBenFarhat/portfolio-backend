@@ -1,0 +1,16 @@
+{% extends "allauth/layouts/base.html" %}
+{% comment %}Sign-out confirmation. Allauth's default renders a bare, unstyled button; this
+themes the page like the rest of the auth flow (shared card + .btn). Posts to account_logout;
+after logout ACCOUNT_LOGOUT_REDIRECT_URL sends the visitor to the public landing.{% endcomment %}
+{% block head_title %}Sign out{% endblock %}
+{% block content %}
+  <div class="auth-head">
+    <h1 class="auth-title">Sign out</h1>
+    <p class="auth-sub">Are you sure you want to sign out?</p>
+  </div>
+  <form class="auth-form" method="post" action="{% url 'account_logout' %}">
+    {% csrf_token %}
+    {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
+    <button class="btn" type="submit">Sign out</button>
+  </form>
+{% endblock %}
