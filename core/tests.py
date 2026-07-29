@@ -492,3 +492,18 @@ def test_logout_page_renders_a_themed_button():
     assert 'class="btn"' in body  # the site's button style
     assert 'action="/accounts/logout/"' in body
     assert "Sign out" in body
+
+
+@pytest.mark.django_db
+def test_logout_redirects_to_the_sign_in_page():
+    """Signing out lands on the sign-in page (LOGIN_URL), not the marketing landing, so
+    there's an immediate way back in."""
+    from django.conf import settings
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="bye2", password="p")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(user)
+    response = client.post(reverse("account_logout"))
+    assert response.status_code == 302
+    assert response["Location"] == settings.LOGIN_URL == "/signin"

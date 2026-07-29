@@ -216,11 +216,12 @@ SOCIALACCOUNT_AUTO_SIGNUP = True
 HEADLESS_ONLY = env_bool("HEADLESS_ONLY", default=False)
 HEADLESS_FRONTEND_URLS = {"socialaccount_login_error": f"{FRONTEND_URL}/auth/error"}
 # After sign-in, land on the dashboard SPA (app.hirees.me). LOGIN_URL is the backend's own
-# Django sign-in page — where the SPA sends unauthenticated visitors — and sign-out returns to
-# the public landing.
+# Django sign-in page — where the SPA sends unauthenticated visitors — and sign-out returns
+# there too (the sign-in page, not the marketing landing), so signing out leads straight back
+# to a way back in.
 LOGIN_REDIRECT_URL = APP_URL
 LOGIN_URL = "/signin"
-ACCOUNT_LOGOUT_REDIRECT_URL = "/"
+ACCOUNT_LOGOUT_REDIRECT_URL = LOGIN_URL
 
 
 # Provider-level config (scopes) only. Client credentials do NOT live here — they're the
