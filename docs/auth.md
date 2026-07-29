@@ -62,9 +62,14 @@ were added (via the Cloudflare API, not the flaky dashboard), are in `docs/infra
 silently breaks signing). Those records are live and **Brevo reports the domain authenticated
 (2026-07-26)**.
 
-The one remaining owner step for production email: set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD`
-(the Brevo SMTP key, from Brevo → *SMTP & API*) in Render. Until then the app falls back to the
-console backend, so email sign-up can't send in production — social login is unaffected.
+**Production email is live (2026-07-29):** the Brevo SMTP credentials are set in Render, so the
+verification-code and password-reset mail now sends over Brevo instead of falling back to the
+console backend. `EMAIL_HOST` (`smtp-relay.brevo.com`), `EMAIL_PORT` (`587`), `EMAIL_USE_TLS`, and
+`DEFAULT_FROM_EMAIL` come from the Blueprint; `EMAIL_HOST_USER` (the Brevo SMTP login) and
+`EMAIL_HOST_PASSWORD` (an SMTP key generated under Brevo → *SMTP & API → SMTP*) are `sync: false`
+secrets, so they live only in the Render dashboard, never in the repo. Local dev still leaves
+`EMAIL_HOST` unset and uses the console backend. Note: a Brevo SMTP key **expires after 90 days of
+inactivity** — if production email ever stops, regenerate the key and update `EMAIL_HOST_PASSWORD`.
 
 ## Credentials live in the admin, encrypted
 

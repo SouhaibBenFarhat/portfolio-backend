@@ -201,9 +201,10 @@ the dashboard and must be flipped (the API sets it explicitly). **Delete the tok
 it's a live credential.
 
 **Status:** records added → Brevo *Authenticate domain* succeeded (propagation was instant, not
-the 48h worst case). **Remaining owner step:** set `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (the
-Brevo SMTP key, *SMTP & API*) in Render. Until those are set the app uses the console backend and
-email sign-up can't send in production; social login is unaffected.
+the 48h worst case). **SMTP wired (2026-07-29):** `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` (the
+Brevo SMTP key, *SMTP & API → SMTP*) are set in Render, so production email sends over Brevo. The
+key **expires after 90 days of inactivity** — regenerate and update `EMAIL_HOST_PASSWORD` if email
+ever stops. Local dev leaves these unset and uses the console backend.
 
 ### Django
 
