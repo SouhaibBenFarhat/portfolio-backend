@@ -1,89 +1,30 @@
-{% comment %}Overrides allauth's default socialaccount/signup.html — the "complete your signup"
-step — in the site's own design, so it stops rendering as a bare, unstyled page.{% endcomment %}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Finish signing in · hirees.me</title>
-<meta name="robots" content="noindex">
-<link rel="icon" href="/favicon.svg">
-<style>
-:root {
-  --bg: #faf8f4; --surface: #ffffff; --text: #16181d; --muted: #5b616d; --line: #e9e4db;
-  --accent: #1f6f78; --on-accent: #ffffff; --raised: var(--surface);
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
-  --shadow-sm: 0 1px 2px rgba(22,24,29,.04), 0 1px 3px rgba(22,24,29,.06);
-  --shadow-lg: 0 8px 24px rgba(22,24,29,.10), 0 2px 6px rgba(22,24,29,.06);
-  --font-display: 'Fraunces Variable', Fraunces, Georgia, serif;
-  --font-sans: 'Inter Variable', Inter, -apple-system, system-ui, sans-serif;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #0d0f12; --surface: #14171c; --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
-  --accent: #5cb6be; --on-accent: #08272a; --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-} }
-:root[data-theme="dark"] {
-  --bg: #0d0f12; --surface: #14171c; --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
-  --accent: #5cb6be; --on-accent: #08272a; --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-}
-* , *::before, *::after { box-sizing: border-box; }
-html { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
-body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 2.5rem 1.5rem; }
-a { color: var(--accent); text-decoration: none; }
-:where(a, button, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+{% extends "allauth/layouts/base.html" %}
+{% comment %}
+Overrides allauth's default socialaccount/signup.html — the "One more step" screen shown
+after continuing with Google, GitHub or LinkedIn, before the account is actually created.
 
-.wordmark { display: inline-flex; align-items: center; gap: .5rem; font-family: var(--font-display); font-size: 1.0625rem; font-weight: 600; letter-spacing: -.01em; margin-bottom: 1.5rem; }
-.wordmark .tld { color: var(--accent); }
-/* Filled tile, so a step smaller than the old open glyph; fills come from the tokens. */
-.wordmark .logo { width: 1.25rem; height: 1.25rem; }
+This used to be a standalone page carrying its own copy of the design tokens, header,
+footer, theme script and form styling. There was no design reason for that; it was simply
+styled before the shared shell existed and never moved over. The copy is what made it
+drift — it had to be patched three separate times (#48, #49, #51) to catch up with changes
+every other page got for free, and it was still the one page whose theme could flash on
+load. Extending the same layout as every other account page leaves nothing here to fall
+behind: header, footer, tokens, card, fields and the mark all arrive from the shell.
+{% endcomment %}
+{% block head_title %}Finish signing in{% endblock %}
 
-.card { width: 100%; max-width: 25.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); padding: 2.25rem 2rem; text-align: center; }
-.title { font-family: var(--font-display); font-weight: 600; font-size: 1.75rem; line-height: 1.1; letter-spacing: -.022em; margin: 0; }
-.sub { margin: .75rem auto 0; max-width: 30ch; color: var(--muted); font-size: .9375rem; line-height: 1.55; }
-
-form { margin-top: 1.75rem; text-align: left; }
-form p { margin: 0 0 1rem; display: flex; flex-direction: column; gap: .375rem; }
-form label { font-size: .8125rem; font-weight: 500; color: var(--muted); }
-form input { width: 100%; font-family: inherit; font-size: .9375rem; color: var(--text); background: var(--bg); border: 1px solid var(--raised-line); border-radius: 8px; padding: .625rem .75rem; }
-form .helptext { font-size: .75rem; color: var(--muted); }
-form .errorlist, .errorlist { list-style: none; margin: 0 0 1rem; padding: .75rem .875rem; border-radius: 8px; background: color-mix(in srgb, #e5484d 10%, var(--surface)); border: 1px solid color-mix(in srgb, #e5484d 32%, var(--line)); color: #ce2c31; font-size: .8125rem; line-height: 1.5; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .errorlist { color: #ff9592; } }
-:root[data-theme="dark"] .errorlist { color: #ff9592; }
-
-.btn { width: 100%; margin-top: .5rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 8px; padding: .8125rem 1rem; font-family: inherit; font-size: .9375rem; font-weight: 500; cursor: pointer; background: var(--accent); color: var(--on-accent); transition: transform .2s var(--ease), filter .2s var(--ease); }
-.btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
-.foot { margin-top: 1.25rem; font-size: .8125rem; color: var(--muted); }
-</style>
-</head>
-<body>
-<div>
-  <div style="text-align:center;">
-    <a href="/" class="wordmark" aria-label="hirees.me home">
-      {% include "partials/_logo.html" %}
-      <span>hirees<span class="tld">.me</span></span>
-    </a>
+{% block content %}
+  <div class="auth-head">
+    <h1 class="auth-title">One more step</h1>
+    <p class="auth-sub">Confirm the details below to finish creating your hirees.me account.</p>
   </div>
-  <div class="card">
-    <h1 class="title">One more step</h1>
-    <p class="sub">Confirm the details below to finish creating your hirees.me account.</p>
-    <form method="post" action="{% url 'socialaccount_signup' %}">
-      {% csrf_token %}
-      {{ form.as_p }}
-      {% if redirect_field_value %}
-      <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
-      {% endif %}
-      <button type="submit" class="btn">Continue</button>
-    </form>
-    <p class="foot"><a href="/signin">Use a different account</a></p>
-  </div>
-</div>
-<script>
-  try { var t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
-</script>
-</body>
-</html>
+
+  <form class="auth-form" method="post" action="{% url 'socialaccount_signup' %}">
+    {% csrf_token %}
+    {% include "partials/_fields.html" with variant="on-surface" %}
+    {% if redirect_field_value %}
+    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+    {% endif %}
+    <button class="btn" type="submit">Continue</button>
+  </form>
+{% endblock %}

@@ -142,12 +142,14 @@ def test_the_template_mark_and_the_generated_favicon_are_the_same_drawing():
 
 
 def test_every_page_with_the_wordmark_uses_the_shared_mark():
-    """All three pages showing the wordmark must draw the shared mark, not a hand-copy.
+    """Pages showing the wordmark must draw the shared mark, not a hand-copy.
 
-    landing and socialaccount/signup sit outside site_base.html, and they are exactly the
-    two that drifted under the old four-copy mark — signup was restyled three separate
-    times to catch it up. The rendered pages are checked by output; signup needs an allauth
-    flow in progress to reach, so its template source is checked for the include instead.
+    The landing sits outside site_base.html deliberately — it must render on a cold
+    instance with nothing collected — so it includes the mark itself and is checked by
+    output. socialaccount/signup used to be outside the shell too, purely as leftover
+    order-of-work, and was the page that kept drifting; it now extends the shared layout,
+    so it inherits the mark rather than carrying one, and that inheritance is what's
+    asserted here.
     """
     from django.template.loader import get_template, render_to_string
 
@@ -160,7 +162,8 @@ def test_every_page_with_the_wordmark_uses_the_shared_mark():
             assert stroke in body, f"{path} does not draw the shared mark"
 
     source = get_template("socialaccount/signup.html").template.source
-    assert 'include "partials/_logo.html"' in source
+    assert '{% extends "allauth/layouts/base.html" %}' in source
+    assert "<svg" not in source, "it should inherit the mark, not draw its own"
 
 
 def test_favicon_is_served_as_svg():

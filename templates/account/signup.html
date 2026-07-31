@@ -18,7 +18,7 @@ account isn't usable until the code is entered.{% endcomment %}
 
   <form class="auth-form" method="post" action="{% url 'account_signup' %}">
     {% csrf_token %}
-    {% include "partials/_fields.html" %}
+    {% include "partials/_fields.html" with variant="on-surface" %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
     <button class="btn" type="submit">Create account</button>
   </form>

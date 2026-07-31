@@ -29,11 +29,18 @@ hub's own copy and the two email inputs.
 
     <form class="auth-form" method="post" action="{% url 'account_login' %}">
       {% csrf_token %}
-      <div class="fld">
+      {% comment %}
+      Hand-written rather than {% include "partials/_input.html" %}: this hub is a plain
+      Django view with no allauth form in its context, so there are no bound fields to
+      render. The markup and the fld--on-surface variant have to match what that partial
+      emits — these inputs sit in the same card as every other form's, and must not be the
+      one place where a field still reads as disabled.
+      {% endcomment %}
+      <div class="fld fld--on-surface">
         <label for="id_hub_email">Email</label>
         <input id="id_hub_email" type="email" name="login" autocomplete="email" required placeholder="you@company.com">
       </div>
-      <div class="fld">
+      <div class="fld fld--on-surface">
         <label for="id_hub_pw">Password</label>
         <input id="id_hub_pw" type="password" name="password" autocomplete="current-password" required placeholder="Your password">
       </div>
