@@ -1,0 +1,31 @@
+{% extends "site_base.html" %}
+{% comment %}
+Django's handler for an unhandled exception (django.views.defaults.server_error), picked up
+automatically because this sits at the root of TEMPLATES DIRS. No view, no URL entry.
+
+Rendered with NO CONTEXT AT ALL — `template.render()` with no request, so no context
+processors run and {{ user }}, {{ messages }} and {{ request }} are all empty. That is
+deliberate on Django's part: whatever broke might be the very thing that populates them.
+
+It follows that this page must not need anything to render. site_base.html suits that
+exactly — its CSS is inline, it uses no {% static %} and touches no database — so this still
+draws correctly when the database is down, which is when a 500 is most likely being served.
+Keep it that way: no context variables, no queries, no {% url %} to anything clever.
+
+Only reachable with DEBUG=False; locally you get the debug traceback instead.
+{% endcomment %}
+
+{% block head_title %}Something went wrong{% endblock %}
+
+{% block page %}
+  <div class="auth-card">
+    <div class="auth-head">
+      <p class="label">Error 500</p>
+      <h1 class="auth-title">Something went wrong</h1>
+      <p class="auth-sub">
+        That's on us, not you. The problem has been logged — try again in a moment.
+      </p>
+    </div>
+    <a class="btn btn--ghost" href="/">Back to hirees.me</a>
+  </div>
+{% endblock %}

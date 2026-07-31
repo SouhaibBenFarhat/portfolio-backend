@@ -1,0 +1,23 @@
+{% extends "site_base.html" %}
+{% comment %}
+django.views.defaults.permission_denied — raised by PermissionDenied, and by Django's CSRF
+failure when CSRF_FAILURE_VIEW isn't overridden. An expired form on a long-open sign-in tab
+lands here, which is why the copy suggests going back and retrying rather than implying the
+visitor did something wrong.
+{% endcomment %}
+
+{% block head_title %}Not allowed{% endblock %}
+
+{% block page %}
+  <div class="auth-card">
+    <div class="auth-head">
+      <p class="label">Error 403</p>
+      <h1 class="auth-title">Not allowed</h1>
+      <p class="auth-sub">
+        You don't have access to that — or the page sat open long enough for its form to
+        expire. Signing in again usually settles it.
+      </p>
+    </div>
+    <a class="btn btn--ghost" href="/signin">Go to sign in</a>
+  </div>
+{% endblock %}

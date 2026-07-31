@@ -1,0 +1,22 @@
+{% extends "site_base.html" %}
+{% comment %}
+django.views.defaults.page_not_found, picked up automatically from the root of TEMPLATES
+DIRS. Unlike 500.html this one does get a little context ({{ request_path }}), but it isn't
+shown: echoing a path back into the page is how reflected text gets in, and it tells the
+visitor nothing they don't already have in the address bar.
+{% endcomment %}
+
+{% block head_title %}Page not found{% endblock %}
+
+{% block page %}
+  <div class="auth-card">
+    <div class="auth-head">
+      <p class="label">Error 404</p>
+      <h1 class="auth-title">Page not found</h1>
+      <p class="auth-sub">
+        That page doesn't exist, or it moved. Nothing is broken.
+      </p>
+    </div>
+    <a class="btn btn--ghost" href="/">Back to hirees.me</a>
+  </div>
+{% endblock %}
