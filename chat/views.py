@@ -8,6 +8,7 @@ refuses off-topic questions before the expensive model runs (see chat/guard.py).
 """
 
 import json
+import logging
 import uuid
 from collections import defaultdict
 from datetime import timedelta
@@ -33,6 +34,8 @@ from .serializers import (
 )
 from .suggestions import suggest_followups
 from .tools import tool_label
+
+logger = logging.getLogger(__name__)
 
 # Cap the restore payload so a very long thread can't return an unbounded response.
 CHAT_HISTORY_FETCH_LIMIT = 200
@@ -451,6 +454,15 @@ async def chat_stream(request):
                     break  # got an answer, or already showed tool steps (don't replay them)
                 # Empty and nothing shown yet → loop to regenerate with the next model.
             except Exception as exc:  # noqa: BLE001 — any failure triggers failover
+                # Logged per attempt, because `error` is reset at the top of each iteration
+                # and only the last model's exception survives into the frame's `detail`.
+                # Without this you cannot tell that failover happened, how many models were
+                # tried, or which one is actually broken.
+                logger.warning(
+                    "Chat model %s failed; trying the next in the chain",
+                    turn_model or head_model,
+                    exc_info=True,
+                )
                 error = exc
                 if emitted:
                     break  # already streamed part of an answer — don't switch models

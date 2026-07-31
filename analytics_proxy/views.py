@@ -11,9 +11,13 @@ Routing (mirrors PostHog's recommended proxy layout):
   /ingest/*         ->  https://eu.i.posthog.com/*                 (events, decide, ...)
 """
 
+import logging
+
 import requests
 from django.http import HttpRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+
+logger = logging.getLogger(__name__)
 
 ASSET_HOST = "https://eu-assets.i.posthog.com"
 INGEST_HOST = "https://eu.i.posthog.com"
@@ -75,6 +79,10 @@ def posthog_proxy(request: HttpRequest, subpath: str) -> HttpResponse:
             allow_redirects=False,
         )
     except requests.RequestException:
+        # Without this line a PostHog outage is a 502 body string and nothing else: no log,
+        # no retry, no counter. Analytics is not worth failing a request over, but it is
+        # worth being able to tell that it broke.
+        logger.warning("PostHog upstream failed: %s %s", request.method, url, exc_info=True)
         return HttpResponse("Analytics upstream unavailable", status=502)
 
     # `requests` transparently decodes the gzip/deflate it negotiated, so `.content` is

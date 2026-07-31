@@ -40,6 +40,21 @@ class OAuthCredential(models.Model):
         blank=True,
         help_text="OpenID Connect issuer, e.g. https://www.linkedin.com/oauth.",
     )
+    # Whether a sign-in through this provider may land on an account that already exists
+    # under the same address. Off by default: allauth's own default is off, because a
+    # provider that hands back an address it never checked could otherwise be used to walk
+    # into anyone's account. Per row rather than in settings, deliberately — allauth reads
+    # `app.settings["email_authentication"]` before any global value, and every OpenID
+    # Connect service shares one provider id ("openid_connect"), so a settings-level flag
+    # could not say "trust LinkedIn" without also trusting the next OIDC provider added.
+    link_by_verified_email = models.BooleanField(
+        default=False,
+        verbose_name="link by verified email",
+        help_text="Sign the visitor into an existing account when this provider reports "
+        "their email as verified. Only tick it for providers that really verify — "
+        "otherwise this is a way into any account. Off means they are told the account "
+        "already exists instead.",
+    )
     is_active = models.BooleanField(default=True, help_text="Uncheck to disable without deleting.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

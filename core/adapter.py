@@ -23,9 +23,12 @@ def _social_app(cred: OAuthCredential) -> SocialApp:
         client_id=cred.client_id,
         secret=cred.secret,  # EncryptedTextField decrypts on read; stays in memory only
     )
+    # Always set the key, never leave it absent: allauth falls through to the global setting
+    # only when the app doesn't answer, and this row is the answer we want it to use.
+    app.settings = {"email_authentication": cred.link_by_verified_email}
     if cred.server_url:
         # OpenID Connect discovers its endpoints from the issuer URL in the app's settings.
-        app.settings = {"server_url": cred.server_url}
+        app.settings["server_url"] = cred.server_url
     return app
 
 

@@ -209,6 +209,17 @@ ACCOUNT_RATE_LIMITS = {
 SOCIALACCOUNT_EMAIL_REQUIRED = False
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
+# Someone who signed up with email+password and later clicks "Continue with Google" is the
+# same person, and should land on the same account rather than be told it already exists.
+# WHICH providers may do that is decided per credential row in the admin
+# (OAuthCredential.link_by_verified_email → the app's `email_authentication` setting), not
+# here: every OpenID Connect service shares the provider id "openid_connect", so a global
+# flag could not trust LinkedIn without also trusting the next OIDC provider added. This
+# setting only says what happens once such a login is allowed — write the SocialAccount
+# link. Without it allauth signs them in but stores nothing, so it re-matches on the email
+# every single time and sign-in breaks the day they change their address.
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+
 # The auth flow is server-rendered for now — a /signin page and an /app dashboard stub, in
 # the site's design — so allauth serves its classic endpoints (provider login/callback and
 # logout) that those pages post to. HEADLESS_ONLY stays False; when the dashboard becomes a
@@ -436,6 +447,34 @@ SPECTACULAR_SETTINGS = {
         {"url": "https://portfolio-backend-2huw.onrender.com", "description": "Production"},
         {"url": "http://localhost:8000", "description": "Local development"},
     ],
+}
+
+# --- Logging ---------------------------------------------------------------
+# Everything goes to stderr, because stderr is what the host captures: Render shows it in
+# the service's log stream. Deliberately not a file (the free disk is ephemeral) and not a
+# database table (the free Postgres is small — RequestLog is already pruned on every single
+# request for exactly that reason).
+#
+# Django's own default is a complete no-op in production, and that cost real debugging time:
+# its `console` handler carries a `require_debug_true` filter, and its `mail_admins` handler
+# returns immediately because ADMINS is empty. So an unhandled 500 — a failing SMTP send
+# during an OAuth callback, a DisallowedHost, any view raising — wrote nothing anywhere, and
+# a bare "Server Error (500)" in the browser was the only evidence it had happened.
+# Redefining `django` here with propagate=False replaces both of those handlers.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    # Render stamps its own timestamp on every line it captures, so adding one here would
+    # just be duplication in the place these logs are actually read.
+    "formatters": {"console": {"format": "{levelname} {name}: {message}", "style": "{"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "console"}},
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        # django.request has no entry of its own in Django's defaults — it propagates here,
+        # carrying the traceback on 5xx and a plain line on 4xx.
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+    },
 }
 
 # --- Production hardening --------------------------------------------------

@@ -14,11 +14,14 @@ message too. It is not the main defence against them — the agent's tools are r
 so a hijacked model can only produce words — but it costs nothing extra to refuse here.
 """
 
+import logging
 import os
 
 from django.conf import settings
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_litellm import ChatLiteLLM
+
+logger = logging.getLogger(__name__)
 
 GUARD_SYSTEM_PROMPT = (
     "You screen messages for an AI assistant on Souhaib Ben Farhat's developer portfolio. "
@@ -114,5 +117,9 @@ async def is_message_in_scope(
         )
         verdict = _content_text(result).strip().upper()
     except Exception:  # noqa: BLE001 — a check failure must never break the chat
+        # Failing open is right, but it must not be silent: a permanently broken key would
+        # otherwise disable the scope check for good, and the first sign of it would be the
+        # month's tokens spent answering questions that were never about Souhaib.
+        logger.warning("Scope check failed; answering the message anyway", exc_info=True)
         return True
     return not verdict.startswith("OUT")
