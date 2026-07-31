@@ -1,0 +1,24 @@
+{% extends "site_base.html" %}
+{% comment %}
+django.views.defaults.bad_request — raised by SuspiciousOperation, of which the one that
+actually happens here is DisallowedHost: a request arriving on a hostname missing from
+ALLOWED_HOSTS. If this page starts appearing on a domain that should work, that setting is
+where to look (see docs/infrastructure.md).
+
+Like 500.html this renders with no context, so it must not need anything.
+{% endcomment %}
+
+{% block head_title %}Bad request{% endblock %}
+
+{% block page %}
+  <div class="auth-card">
+    <div class="auth-head">
+      <p class="label">Error 400</p>
+      <h1 class="auth-title">Bad request</h1>
+      <p class="auth-sub">
+        That request couldn't be understood, so nothing was done with it.
+      </p>
+    </div>
+    <a class="btn btn--ghost" href="/">Back to hirees.me</a>
+  </div>
+{% endblock %}

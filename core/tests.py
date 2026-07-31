@@ -154,6 +154,69 @@ def test_a_view_error_is_written_out_with_its_traceback():
     assert "Traceback" in written
 
 
+# --- Error pages ----------------------------------------------------------
+# Django's default handlers pick these up from the root of TEMPLATES DIRS — no view, no URL
+# entry, and every error from here on gets the site's design instead of a bare
+# "<h1>Server Error (500)</h1>". Only visible with DEBUG=False.
+
+
+@pytest.mark.parametrize(
+    ("view_name", "status", "heading"),
+    [
+        ("bad_request", 400, "Bad request"),
+        ("permission_denied", 403, "Not allowed"),
+        ("page_not_found", 404, "Page not found"),
+        ("server_error", 500, "Something went wrong"),
+    ],
+)
+def test_every_error_page_renders_in_the_site_design(view_name, status, heading):
+    """Each handler finds our template and draws the shared shell, not Django's bare page."""
+    from django.core.exceptions import PermissionDenied, SuspiciousOperation
+    from django.http import Http404
+    from django.test import RequestFactory
+    from django.views import defaults
+
+    view = getattr(defaults, view_name)
+    request = RequestFactory().get("/whatever")
+    exceptions = {
+        "bad_request": SuspiciousOperation(),
+        "permission_denied": PermissionDenied(),
+        "page_not_found": Http404(),
+    }
+    response = (
+        view(request) if view_name == "server_error" else view(request, exceptions[view_name])
+    )
+
+    body = response.content.decode()
+    assert response.status_code == status
+    assert heading in body
+    assert "hirees" in body  # the shared shell, not Django's default page
+    assert "{%" not in body and "{#" not in body  # no template syntax leaked
+
+
+def test_the_500_page_renders_with_no_context_at_all():
+    """The property that matters. django.views.defaults.server_error calls template.render()
+    with no request and no context processors, so nothing here may depend on {{ user }},
+    {{ messages }} or a database — a 500 is most likely being served precisely when those are
+    the broken things."""
+    from django.template.loader import get_template
+
+    body = get_template("500.html").render()  # no context, exactly as Django does it
+    assert "Something went wrong" in body
+    assert "{%" not in body and "{#" not in body
+
+
+def test_a_missing_page_serves_the_themed_404():
+    """End to end through the real handler, which only engages with DEBUG off."""
+    from django.test import override_settings
+
+    with override_settings(DEBUG=False):
+        response = Client().get("/no-such-page-exists")
+
+    assert response.status_code == 404
+    assert "Page not found" in response.content.decode()
+
+
 # --- OpenAPI schema + Swagger UI ------------------------------------------
 
 
