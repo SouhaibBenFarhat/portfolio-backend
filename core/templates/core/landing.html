@@ -1325,20 +1325,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 <header>
   <div class="wrap header-inner">
     <a href="/" class="wordmark">
-      <!-- The mark: a lowercase "h" closed by the full stop of ".me", drawn on Lucide's
-           24x24 grid (ISC, lucide.dev) inside a 32 tile. A filled tile rather than the bare
-           strokes it used to be — a naked "h" beside the word "hirees" stutters, since the
-           eye reads it as a letter and starts the name twice. Same drawing as /favicon.svg
-           (core/views.py); fills are tokens, so it follows the theme. -->
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="7" fill="var(--accent)"/>
-        <g transform="translate(4 4)" fill="none" stroke="var(--on-accent)" stroke-width="2.3"
-           stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5.6 3.4V20.6"/>
-          <path d="M5.6 11.8h6a2 2 0 0 1 2 2V20.6"/>
-          <circle cx="18" cy="19.1" r="1.5" fill="var(--on-accent)" stroke="none"/>
-        </g>
-      </svg>
+      {% include "partials/_logo.html" %}
       <span>hirees<span class="tld">.me</span></span>
     </a>
     <div class="header-actions">

@@ -35,6 +35,12 @@ from .serializers import HealthSerializer, MeSerializer, ServiceDescriptorSerial
 # monogram here, more than any aesthetic one.
 #
 # Petrol (#1f6f78) is the site's accent — see the token block in the landing template.
+#
+# THE OTHER COPY: templates/partials/_logo.html draws the same letter for every page that
+# shows the wordmark. It can't share this code — a favicon is served standalone, so it needs
+# literal colours rather than CSS variables, its own <svg xmlns>, and a second heavier
+# weight for the browser tab. Two sources is the floor here, not four, and
+# test_the_template_mark_and_the_generated_favicon_are_the_same_drawing fails if they part.
 _MARK_COLOUR = "#1f6f78"
 
 # The letter, on Lucide's 24x24 grid: an ascender, then a shoulder that turns down into the

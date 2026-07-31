@@ -64,15 +64,7 @@ form .errorlist, .errorlist { list-style: none; margin: 0 0 1rem; padding: .75re
 <div>
   <div style="text-align:center;">
     <a href="/" class="wordmark" aria-label="hirees.me home">
-      {# The mark — see templates/site_base.html; this page is outside that shell and keeps its own copy. #}
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="7" fill="var(--accent)"/>
-        <g transform="translate(4 4)" fill="none" stroke="var(--on-accent)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M5.6 3.4V20.6"/>
-          <path d="M5.6 11.8h6a2 2 0 0 1 2 2V20.6"/>
-          <circle cx="18" cy="19.1" r="1.5" fill="var(--on-accent)" stroke="none"/>
-        </g>
-      </svg>
+      {% include "partials/_logo.html" %}
       <span>hirees<span class="tld">.me</span></span>
     </a>
   </div>

@@ -88,6 +88,18 @@ def _stroke_width(svg: str) -> float:
     return float(re.search(r'stroke-width="([\d.]+)"', svg).group(1))
 
 
+def _letter_paths(svg: str) -> list[str]:
+    """The `d` of every <path> in the mark — the letter itself, without its full stop."""
+    return re.findall(r'<path d="([^"]+)"', svg)
+
+
+def _full_stop(svg: str) -> tuple[float, float, float]:
+    """The mark's dot as (cx, cy, r), compared as numbers because one source writes 18.0
+    and the other writes 18 for the same position."""
+    circle = re.search(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"', svg)
+    return tuple(float(group) for group in circle.groups())
+
+
 def test_the_tab_mark_is_the_same_letter_carrying_more_weight():
     """A monogram needs no redrawing at 16px, only more weight.
 
@@ -105,6 +117,50 @@ def test_the_tab_mark_is_the_same_letter_carrying_more_weight():
     assert _stroke_width(small) > _stroke_width(full)
     assert "linearGradient" not in small  # no gradients anywhere in this design system
     assert "#1f6f78" in small  # the site's petrol accent
+
+
+def test_the_template_mark_and_the_generated_favicon_are_the_same_drawing():
+    """The logo has two sources, and nothing but this test stops them parting.
+
+    Every page that shows the wordmark includes templates/partials/_logo.html; the favicon
+    routes are drawn in Python by core.views._mark. They can't be one source — a favicon is
+    served standalone, so it needs literal colours instead of CSS variables, its own
+    <svg xmlns>, and a heavier second weight for the browser tab.
+
+    The mark this replaced had *four* hand-kept copies and no check at all, which is how the
+    social-signup page kept getting missed. Two is the floor; this keeps it honest.
+    """
+    from django.template.loader import render_to_string
+
+    from core import views
+
+    partial = render_to_string("partials/_logo.html")
+
+    assert _letter_paths(partial) == _letter_paths(views._LETTER)
+    # The template carries the display weight, so it's FAVICON_SVG the dot must match.
+    assert _full_stop(partial) == _full_stop(views.FAVICON_SVG)
+
+
+def test_every_page_with_the_wordmark_uses_the_shared_mark():
+    """All three pages showing the wordmark must draw the shared mark, not a hand-copy.
+
+    landing and socialaccount/signup sit outside site_base.html, and they are exactly the
+    two that drifted under the old four-copy mark — signup was restyled three separate
+    times to catch it up. The rendered pages are checked by output; signup needs an allauth
+    flow in progress to reach, so its template source is checked for the include instead.
+    """
+    from django.template.loader import get_template, render_to_string
+
+    letter = _letter_paths(render_to_string("partials/_logo.html"))
+    assert letter, "the partial itself draws nothing"
+
+    for path in ("/", "/signin"):
+        body = Client().get(path).content.decode()
+        for stroke in letter:
+            assert stroke in body, f"{path} does not draw the shared mark"
+
+    source = get_template("socialaccount/signup.html").template.source
+    assert 'include "partials/_logo.html"' in source
 
 
 def test_favicon_is_served_as_svg():
