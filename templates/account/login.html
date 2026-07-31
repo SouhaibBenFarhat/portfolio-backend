@@ -8,7 +8,7 @@ usual entry; this is allauth's own login page (where it redirects internally / d
 {% block content %}
   <div class="auth-head">
     <h1 class="auth-title">Sign in</h1>
-    <p class="auth-sub">New to hirees.me? <a href="{% url 'account_signup' %}">Create an account</a>.</p>
+    <p class="auth-sub">Continue with a provider, or sign in with your email.</p>
   </div>
 
   {% social_buttons %}
@@ -21,6 +21,10 @@ usual entry; this is allauth's own login page (where it redirects internally / d
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
     <button class="btn" type="submit">Sign in</button>
   </form>
+
+  {% comment %}The other way in, as a button rather than small print — see the same pair on
+  the /signin hub. An <a>, not a <button>, so it can't submit the form above it.{% endcomment %}
+  <a class="btn btn--ghost" href="{% url 'account_signup' %}">Create an account</a>
 
   <p class="auth-alt"><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
 {% endblock %}

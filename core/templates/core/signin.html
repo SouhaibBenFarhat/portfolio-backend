@@ -47,7 +47,15 @@ hub's own copy and the two email inputs.
       <button class="btn" type="submit">Sign in</button>
     </form>
 
-    <p class="auth-alt">New to hirees.me? <a href="{% url 'account_signup' %}">Create an account</a><br><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
+    {% comment %}
+    The other way in, as a real button rather than a line of small print. Someone who has no
+    account yet has no correct action on this page otherwise, and a 13px link was the smallest
+    text on the screen for the one thing they need. An <a>, not a <button>, so it can't submit
+    the form above it.
+    {% endcomment %}
+    <a class="btn btn--ghost" href="{% url 'account_signup' %}">Create an account</a>
+
+    <p class="auth-alt"><a href="{% url 'account_reset_password' %}">Forgot your password?</a></p>
     <p class="auth-fine">By continuing you agree to the terms. We only use your account to sign you in.</p>
   </div>
 

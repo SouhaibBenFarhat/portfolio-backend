@@ -9,7 +9,7 @@ account isn't usable until the code is entered.{% endcomment %}
 {% block content %}
   <div class="auth-head">
     <h1 class="auth-title">Create your account</h1>
-    <p class="auth-sub">Already have one? <a href="{% url 'account_login' %}">Sign in</a>.</p>
+    <p class="auth-sub">Continue with a provider, or sign up with your email.</p>
   </div>
 
   {% social_buttons %}
@@ -22,6 +22,11 @@ account isn't usable until the code is entered.{% endcomment %}
     {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
     <button class="btn" type="submit">Create account</button>
   </form>
+
+  {% comment %}The mirror of the sign-in page's pair — the other way in, as a button rather
+  than small print. An <a>, not a <button>, so it can't submit the form above it.{% endcomment %}
+  <p class="auth-alt">Already have an account?</p>
+  <a class="btn btn--ghost" href="{% url 'account_login' %}">Sign in</a>
 
   <p class="auth-fine">We'll email you a code to confirm your address before you're signed in.</p>
 {% endblock %}
