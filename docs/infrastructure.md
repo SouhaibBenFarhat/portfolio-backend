@@ -258,6 +258,47 @@ Only the DNS layer moves. The registrar and Cloudflare stay untouched.
 Because the domain is not tied to any host, there is no lock-in: no host owns the name, and
 no migration requires touching the registrar.
 
+## Logs — where they go, and how long they last
+
+Everything is written to **stderr**, which is what the host captures: Render shows it under
+the service's **Logs** tab. Nothing is written to a file (the free disk is ephemeral) and
+nothing to a table (the free Postgres is small — `RequestLog` is already pruned on *every*
+request for that reason).
+
+**They are not persisted by us.** Render keeps a rolling window of recent output and drops
+what falls off the end; there is no archive, and a log line is gone once it ages out. If
+durable history is ever wanted, the options are a Render **log stream** to an external sink,
+or an error tracker — but note the 512 MB single-worker ceiling before adding an agent with
+threads of its own.
+
+`LOG_LEVEL` (default `INFO`) sets the level; it isn't in the Blueprint, so production runs
+the default until you add it.
+
+This exists because Django's own defaults emit **nothing** in production: the built-in
+console handler carries a `require_debug_true` filter and `mail_admins` returns immediately
+on an empty `ADMINS`. An unhandled 500 therefore wrote nothing anywhere — a failing SMTP
+send inside an OAuth callback surfaced only as `Server Error (500)` in the browser, with no
+way to tell what raised. `config/settings.py` now redefines the `django` logger with
+`propagate=False`, replacing both.
+
+What reaches the stream:
+
+| Source | What you get |
+| --- | --- |
+| `django.request` | every 5xx with its **full traceback**; 4xx as single lines |
+| Gunicorn | worker lifecycle, and `Worker was sent SIGKILL! Perhaps out of memory?` |
+| Uvicorn | `Exception in ASGI application` — exceptions escaping the SSE generator |
+| `chat.views` | each failover attempt (only the *last* model's error reaches the SSE `detail`) |
+| `chat.guard` | the scope check failing open — otherwise a dead key silently spends the tier |
+| `chat.suggestions` | chips failing or hitting their 4s timeout |
+| `chat.agent` | a model LiteLLM has no context window for (once per model per process) |
+| `analytics_proxy` | PostHog upstream failures, which were previously a 502 and nothing else |
+
+**Still not logged: an access log.** Gunicorn runs without `--access-logfile`, so there is no
+record of which URL was hit, its status, or its latency. Adding `--access-logfile -` to the
+`startCommand` turns the whole chain on — the reason it's off is that UptimeRobot's `/health`
+probe every 5 minutes would be ~288 lines a day of noise in a window that only holds so much.
+
 ## Free-tier constraints still in force
 
 - Render free sleeps after ~15 minutes idle (~30–50s cold start). An external UptimeRobot

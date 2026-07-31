@@ -1181,6 +1181,22 @@ def test_scope_check_fails_open_on_error():
         assert asyncio.run(guard.is_message_in_scope("what are his skills?", api_key="k")) is True
 
 
+def test_a_failing_scope_check_says_so_instead_of_failing_open_in_silence(caplog):
+    """Failing open is right, but silent failing open is not: a permanently broken key would
+    disable the check for good, and the first sign would be the month's tokens spent on
+    questions that were never about Souhaib."""
+    from chat import guard
+
+    def _boom(_key):
+        raise RuntimeError("guard down")
+
+    with patch.object(guard, "build_guard_model", side_effect=_boom), caplog.at_level("WARNING"):
+        asyncio.run(guard.is_message_in_scope("what are his skills?", api_key="k"))
+
+    assert "Scope check failed" in caplog.text
+    assert "guard down" in caplog.text  # the cause rides along, not just the symptom
+
+
 @pytest.mark.django_db(transaction=True)
 def test_off_topic_question_never_reaches_the_model():
     """The whole point: someone using the chat as a free coding tutor costs one short

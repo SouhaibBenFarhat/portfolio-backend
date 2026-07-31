@@ -99,6 +99,61 @@ def test_favicon_is_served_as_svg():
     assert b"<svg" in response.content
 
 
+# --- Logging --------------------------------------------------------------
+# Django's own defaults emit nothing in production: the console handler carries
+# `require_debug_true` and `mail_admins` no-ops on an empty ADMINS. An unhandled 500 wrote
+# nothing anywhere, which is how a failing SMTP send inside an OAuth callback showed up as a
+# bare "Server Error (500)" with no trace of the cause.
+
+
+def test_errors_are_logged_whatever_debug_is_set_to():
+    """The handler must not be gated on DEBUG — production is exactly where it's needed."""
+    import logging
+
+    handlers = settings.LOGGING["handlers"]
+    assert handlers["console"]["class"] == "logging.StreamHandler"
+    assert "filters" not in handlers["console"], "a DEBUG filter would make this a no-op in prod"
+    assert "mail_admins" not in handlers, "ADMINS is empty, so that handler discards silently"
+
+    django_logger = logging.getLogger("django")
+    assert django_logger.propagate is False, "must not fall back to Django's own handlers"
+    assert any(isinstance(h, logging.StreamHandler) for h in django_logger.handlers)
+
+
+def test_a_view_error_is_written_out_with_its_traceback():
+    """django.request is where Django reports a 500, and the traceback is the whole point —
+    the previous behaviour left only the browser's error page as evidence.
+
+    Writes through the configured handler into a buffer of our own rather than reading
+    stderr: the handler binds its stream once at startup, which under pytest is the runner's
+    capture object, so reading the real file descriptor proves nothing either way.
+    """
+    import io
+    import logging
+
+    handler = next(
+        h for h in logging.getLogger("django").handlers if isinstance(h, logging.StreamHandler)
+    )
+    buffer = io.StringIO()
+    original = handler.setStream(buffer)
+    try:
+        # Raised for real: an exception that was never raised carries no traceback, so
+        # logging would print only its repr — which is not what Django reports on a 500.
+        try:
+            raise RuntimeError("smtp is down")
+        except RuntimeError:
+            logging.getLogger("django.request").error(
+                "Internal Server Error: /accounts/google/login/callback/", exc_info=True
+            )
+    finally:
+        handler.setStream(original)
+
+    written = buffer.getvalue()
+    assert "Internal Server Error: /accounts/google/login/callback/" in written
+    assert "RuntimeError: smtp is down" in written  # the cause, not just that something broke
+    assert "Traceback" in written
+
+
 # --- OpenAPI schema + Swagger UI ------------------------------------------
 
 

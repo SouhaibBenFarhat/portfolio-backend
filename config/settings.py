@@ -449,6 +449,34 @@ SPECTACULAR_SETTINGS = {
     ],
 }
 
+# --- Logging ---------------------------------------------------------------
+# Everything goes to stderr, because stderr is what the host captures: Render shows it in
+# the service's log stream. Deliberately not a file (the free disk is ephemeral) and not a
+# database table (the free Postgres is small — RequestLog is already pruned on every single
+# request for exactly that reason).
+#
+# Django's own default is a complete no-op in production, and that cost real debugging time:
+# its `console` handler carries a `require_debug_true` filter, and its `mail_admins` handler
+# returns immediately because ADMINS is empty. So an unhandled 500 — a failing SMTP send
+# during an OAuth callback, a DisallowedHost, any view raising — wrote nothing anywhere, and
+# a bare "Server Error (500)" in the browser was the only evidence it had happened.
+# Redefining `django` here with propagate=False replaces both of those handlers.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    # Render stamps its own timestamp on every line it captures, so adding one here would
+    # just be duplication in the place these logs are actually read.
+    "formatters": {"console": {"format": "{levelname} {name}: {message}", "style": "{"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "console"}},
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        # django.request has no entry of its own in Django's defaults — it propagates here,
+        # carrying the traceback on 5xx and a plain line on 4xx.
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+    },
+}
+
 # --- Production hardening --------------------------------------------------
 if not DEBUG:
     # Render terminates TLS at its edge and forwards X-Forwarded-Proto.

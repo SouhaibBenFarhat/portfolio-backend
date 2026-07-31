@@ -9,6 +9,7 @@ back to env vars. Agents are cached by the exact plan of (model, key) pairs in u
 reordering the chain or rotating a key in the admin rebuilds them on the next request.
 """
 
+import logging
 from collections.abc import Sequence
 from functools import lru_cache
 
@@ -25,6 +26,8 @@ from .tools import (
     list_github_projects,
     read_document,
 )
+
+logger = logging.getLogger(__name__)
 
 TOOLS = [get_facts, get_cv, list_documents, read_document, list_github_projects, get_repo_readme]
 
@@ -84,6 +87,10 @@ def context_limit(model_id: str) -> int:
     try:
         return litellm.get_model_info(model_id).get("max_input_tokens") or 0
     except Exception:  # noqa: BLE001 — unknown model shouldn't break a chat turn
+        # 0 means _token_budget falls back to CHAT_MAX_CONTEXT_TOKENS unclamped, so the
+        # gauge silently stops being measured against a real window. lru_cache means this
+        # is said once per model per process, not once per turn.
+        logger.warning("LiteLLM has no context window for %s; the cap is unclamped", model_id)
         return 0
 
 

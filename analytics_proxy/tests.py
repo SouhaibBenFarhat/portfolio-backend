@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+import requests
 from django.test import Client
 
 
@@ -92,3 +93,18 @@ def test_large_recording_snapshot_is_not_rejected(mock_request):
 
     assert response.status_code == 200
     assert mock_request.call_args.kwargs["data"] == big_body
+
+
+def test_an_upstream_failure_is_logged_not_only_swallowed(caplog):
+    """A PostHog outage used to be a 502 body string and nothing else — no log, no retry,
+    no counter, nowhere. Analytics isn't worth failing a request over, but it is worth
+    being able to tell that it broke."""
+    with patch(
+        "analytics_proxy.views.requests.request", side_effect=requests.ConnectionError("dns")
+    ):
+        with caplog.at_level("WARNING"):
+            response = Client().get("/ingest/e/")
+
+    assert response.status_code == 502
+    assert "PostHog upstream failed" in caplog.text
+    assert "dns" in caplog.text

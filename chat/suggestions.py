@@ -12,6 +12,7 @@ inviting one would be a lie.
 """
 
 import asyncio
+import logging
 import os
 import re
 
@@ -21,6 +22,8 @@ from langchain_litellm import ChatLiteLLM
 
 from .agent import _provider_of
 from .guard import _content_text
+
+logger = logging.getLogger(__name__)
 
 SUGGESTIONS_SYSTEM_PROMPT = (
     "You write follow-up questions for the chat on Souhaib Ben Farhat's developer "
@@ -102,5 +105,8 @@ async def suggest_followups(history: list, reply: str, api_key: str | None = Non
             timeout=_TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 — chips are garnish, never break the turn
+        # Swallowing this also swallows the 4-second timeout, so chips that quietly stop
+        # appearing forever would otherwise have no explanation anywhere.
+        logger.warning("Follow-up chips unavailable this turn", exc_info=True)
         return []
     return _parse_suggestions(_content_text(result))
