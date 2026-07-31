@@ -8,11 +8,22 @@ encrypted (unlike allauth's plaintext `SocialApp` table) while allauth still get
 what it needs. Wired via `settings.SOCIALACCOUNT_ADAPTER`.
 """
 
+import logging
+
 from allauth.account.adapter import DefaultAccountAdapter
+from allauth.core import context
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialApp
+from django.contrib import messages
 
 from .models import OAuthCredential
+
+logger = logging.getLogger(__name__)
+
+# Shown when transactional mail can't go out. Deliberately vague about the cause — a visitor
+# can do nothing with an SMTP error — but honest that nothing is coming, so they are not left
+# refreshing an inbox for a code that will never arrive.
+MAIL_FAILED_MESSAGE = "We couldn't send that email just now. Please try again in a few minutes."
 
 # Messages allauth queues immediately before we redirect the browser off this site, to the
 # dashboard SPA at APP_URL (LOGIN_REDIRECT_URL). A separate application cannot render
@@ -24,16 +35,42 @@ _MESSAGES_NOBODY_WILL_SEE = frozenset({"account/messages/logged_in.txt"})
 
 
 class AccountAdapter(DefaultAccountAdapter):
-    """Drops messages that would outlive the page they were meant for.
-
-    Wired via `settings.ACCOUNT_ADAPTER`. Everything else is allauth's default: sign-out
-    still says so, and that one now lands on `/signin`, which does render it.
-    """
+    """Wired via `settings.ACCOUNT_ADAPTER`."""
 
     def add_message(self, request, level, message_template=None, *args, **kwargs):
+        """Drop messages that would outlive the page they were meant for.
+
+        Everything else is allauth's default: sign-out still says so, and that one lands on
+        `/signin`, which does render it.
+        """
         if message_template in _MESSAGES_NOBODY_WILL_SEE:
             return
         return super().add_message(request, level, message_template, *args, **kwargs)
+
+    def send_mail(self, template_prefix, email, ctx):
+        """Keep a mail outage from taking the whole auth flow down.
+
+        allauth sends transactional mail *inline during the request* — the verification
+        code, the password-reset link, the "account already exists" notice. Every one of
+        those sends was unguarded, so a broken SMTP server did not degrade the flow, it
+        raised straight out of the view: **seven** paths answered `Server Error (500)`,
+        including both OAuth callbacks, sign-up, and password reset. Nothing was logged
+        either, so the 500 was the only evidence it had happened.
+
+        Failing soft is right here. The mail is a step in a flow, not the flow itself, and
+        the visitor can retry — but they have to be told, or they sit refreshing an inbox
+        for a code that is never coming.
+        """
+        try:
+            super().send_mail(template_prefix, email, ctx)
+        except Exception:
+            # Broad on purpose: SMTP fails in many shapes (auth, DNS, TLS, timeout) and none
+            # of them should cost a visitor their sign-in. The traceback goes to the log,
+            # which is the only place anyone will find out.
+            logger.exception("Could not send %s to %s", template_prefix, email)
+            request = getattr(context, "request", None)
+            if request is not None:
+                messages.error(request, MAIL_FAILED_MESSAGE)
 
 
 def _social_app(cred: OAuthCredential) -> SocialApp:
