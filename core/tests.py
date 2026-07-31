@@ -313,6 +313,12 @@ def _google_signin(client, *, email, email_verified=True):
     """
     from urllib.parse import parse_qs, urlparse
 
+    from django.core.cache import cache
+
+    # allauth rate-limits these endpoints per IP, and every test shares one. Without this a
+    # test only fails when enough siblings ran before it, which is the worst kind of flake.
+    cache.clear()
+
     claims = {
         "iss": "https://accounts.google.com",
         "aud": "g-id",
@@ -437,6 +443,100 @@ def test_the_migration_trusts_the_providers_already_registered():
 
     added_later = OAuthCredential.objects.create(provider="github", client_id="x", secret="y")
     assert added_later.link_by_verified_email is False
+
+
+# --- A mail outage must not take auth down --------------------------------
+# allauth sends transactional mail inline during the request. Every send was unguarded, so a
+# broken SMTP server didn't degrade a flow — it raised out of the view. Seven paths answered
+# Server Error (500), including both OAuth callbacks, sign-up, and password reset. That is
+# what the reported 500s on /accounts/google/login/callback/ and /accounts/github/login/
+# callback/ actually were.
+
+
+def _mail_is_down():
+    """Patch the active (locmem, under test) backend to fail the way a bad key does."""
+    import smtplib
+
+    def boom(self, email_messages):
+        raise smtplib.SMTPAuthenticationError(535, b"5.7.8 Authentication failed")
+
+    return mock.patch("django.core.mail.backends.locmem.EmailBackend.send_messages", boom)
+
+
+def test_sign_up_survives_a_mail_outage_and_says_so():
+    """The account is created either way; what must not happen is a 500. The visitor is told
+    the mail failed rather than left refreshing an inbox for a code that isn't coming."""
+    from core.adapter import MAIL_FAILED_MESSAGE
+
+    client = Client()
+    with _mail_is_down():
+        response = client.post(
+            reverse("account_signup"),
+            {
+                "email": "outage@example.com",
+                "password1": _STRONG_PASSWORD,
+                "password2": _STRONG_PASSWORD,
+            },
+        )
+
+    assert response.status_code == 302, "a failed send must not become a 500"
+    # Compared on a slice without the apostrophe: Django escapes it to &#x27; in the HTML.
+    assert (
+        MAIL_FAILED_MESSAGE.split("send", 1)[1][:24]
+        in client.get(response["Location"]).content.decode()
+    )
+
+
+def test_password_reset_survives_a_mail_outage():
+    """Same shape, different flow — the guard belongs on the send, not on one caller."""
+    _verified_user("reset@example.com")
+    with _mail_is_down():
+        response = Client().post(reverse("account_reset_password"), {"email": "reset@example.com"})
+    assert response.status_code == 302
+
+
+def test_the_oauth_callback_survives_a_mail_outage():
+    """The reported bug. With linking off, a social login onto an existing address sends the
+    "account already exists" notice — and that send raised straight out of the callback."""
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=False
+    )
+    _verified_user("ada@example.com")
+
+    with _mail_is_down():
+        response = _google_signin(Client(), email="ada@example.com")
+
+    assert response.status_code == 302, "a failed notice must not become a 500"
+
+
+def test_a_failed_send_is_logged_with_its_cause(caplog):
+    """The send is swallowed, so the log is the only record that mail is broken at all."""
+    with _mail_is_down(), caplog.at_level("ERROR"):
+        Client().post(
+            reverse("account_signup"),
+            {
+                "email": "logged@example.com",
+                "password1": _STRONG_PASSWORD,
+                "password2": _STRONG_PASSWORD,
+            },
+        )
+
+    assert "Could not send" in caplog.text
+    assert "SMTPAuthenticationError" in caplog.text
+
+
+def test_github_emails_are_fetched_so_a_github_login_can_link():
+    """QUERY_EMAIL defaults to SOCIALACCOUNT_EMAIL_REQUIRED, which is off here so a GitHub
+    user with a private address isn't stranded — and that silently switched off the
+    /user/emails call too. The scope was requested and granted, the result never read, so a
+    GitHub login carried only the unverified public profile address and could never match an
+    existing account."""
+    from allauth.socialaccount import app_settings as socialaccount_settings
+
+    assert socialaccount_settings.QUERY_EMAIL is True
+    assert "user:email" in settings.SOCIALACCOUNT_PROVIDERS["github"]["SCOPE"]
 
 
 # --- Sign-in page ---------------------------------------------------------

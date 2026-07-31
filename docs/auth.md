@@ -170,12 +170,35 @@ creates a plain user (`is_staff=False`). Nothing here ever grants staff.
 
 ### When mail is down
 
-The "Account Already Exists" path is gone for trusted providers, but the underlying fragility
-isn't: allauth sends transactional mail **inline during the request**, and a failing send raises
-straight out of the view. With no `LOGGING` configured (see `docs/infrastructure.md`) that
-surfaces as a bare `Server Error (500)` with no trace anywhere. If sign-in or sign-up 500s,
-**check Brevo first** — the same backend sends the verification code, so a mail outage breaks
-account creation too.
+allauth sends transactional mail **inline during the request** — the verification code, the
+password-reset link, the "account already exists" notice. Every one of those sends used to be
+unguarded, so a broken SMTP server didn't degrade a flow, it raised straight out of the view.
+**Seven paths answered `Server Error (500)`**: sign-up, password reset, an unverified login,
+and both OAuth callbacks. That is what the reported 500s on
+`/accounts/google/login/callback/` and `/accounts/github/login/callback/` actually were —
+mail failing, not OAuth.
+
+`core.adapter.AccountAdapter.send_mail` now catches, logs the traceback, and adds a visible
+message so the visitor isn't left refreshing an inbox. The flow continues. **Nothing in the
+auth surface 500s on a mail outage** — there's a test per path.
+
+That makes an outage quiet, so watch for it deliberately: grep the logs for
+`Could not send`. The one flow that is *functionally* broken without mail is email + password
+sign-up, since the account can't be verified without the code. Social sign-in is unaffected —
+it sends no mail at all.
+
+### GitHub, and why its emails have to be fetched
+
+`SOCIALACCOUNT_QUERY_EMAIL` is set **explicitly on**. allauth defaults it to
+`SOCIALACCOUNT_EMAIL_REQUIRED`, which is off here (so a GitHub user with a private address
+isn't stranded — see above), and that silently switched off the `/user/emails` call too. The
+`user:email` scope was still requested and granted; the result was just never read.
+
+The effect was subtle and bad: a GitHub login arrived carrying only the **public profile**
+address, marked **unverified**. Linking requires a verified address, so a GitHub sign-in could
+never match an existing account no matter what the credential row said — it always fell into
+the "account already exists" branch, and therefore always into the mail path. With it on,
+GitHub's verified addresses are read, including the private ones the public profile omits.
 
 ## Session strategy — how the SPA knows you're signed in
 

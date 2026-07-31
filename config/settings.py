@@ -209,6 +209,17 @@ ACCOUNT_RATE_LIMITS = {
 SOCIALACCOUNT_EMAIL_REQUIRED = False
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
+# Fetch the provider's email addresses. This is NOT the same as requiring one: allauth
+# defaults QUERY_EMAIL to SOCIALACCOUNT_EMAIL_REQUIRED, so switching that off above (so a
+# GitHub user with a private address isn't stranded) silently switched this off too — and
+# with it, GitHub's /user/emails call. The `user:email` scope was still being requested and
+# granted, the result just never fetched. A GitHub login therefore arrived with only the
+# public profile address, marked UNVERIFIED, which meant it could never match an existing
+# account (linking requires a verified address) and always fell into the "account already
+# exists" branch instead. On means /user/emails is read, so GitHub's verified addresses —
+# including the private ones the public profile omits — are available.
+SOCIALACCOUNT_QUERY_EMAIL = env_bool("SOCIALACCOUNT_QUERY_EMAIL", default=True)
+
 # Someone who signed up with email+password and later clicks "Continue with Google" is the
 # same person, and should land on the same account rather than be told it already exists.
 # WHICH providers may do that is decided per credential row in the admin
