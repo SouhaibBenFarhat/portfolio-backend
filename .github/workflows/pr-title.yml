@@ -1,0 +1,70 @@
+name: PR title
+
+# Every pull request title must follow Conventional Commits (feat:, fix:, docs: …).
+#
+# This is a BLOCKING check, unlike the advisory one in the hirees-frontend repo: add `pr-title`
+# to the required status checks on `main` (Settings → Branches → main → Require status checks)
+# or the workflow will report red and GitHub will still offer the merge button.
+#
+# It matters here more than it would elsewhere because `main` is squash-merged, so the PR title
+# *becomes* the commit subject on main — the title is the permanent record, not a label on a
+# thread that disappears.
+#
+# `synchronize` and `reopened` are in the trigger list alongside `edited` so a title fixed after
+# a red run re-runs and turns green without an empty commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+# Least privilege: the action reads the pull request and writes its own status. It never needs
+# contents write.
+permissions:
+  pull-requests: read
+  statuses: write
+
+# A title can be edited several times in a row; only the last check is meaningful.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # No `name:` on purpose. GitHub names the check run after the job's `name` when it has one and
+  # falls back to the job id otherwise, and the required-status-check setting matches that string
+  # exactly — so a display name here would mean requiring "Title follows Conventional Commits"
+  # while the obvious guess, `pr-title`, silently matched nothing and left every pull request
+  # waiting on a status that never arrives. The `test` job in ci.yml is bare for the same reason.
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The same set the branch prefixes already use (feat/, fix/, docs/, ci/), plus the
+          # rest of the conventional list so a genuine chore or refactor has somewhere to go.
+          types: |
+            feat
+            fix
+            docs
+            ci
+            chore
+            refactor
+            perf
+            test
+            build
+            style
+            revert
+          # Scopes are optional. This repo is small and its apps (core, chat, analytics_proxy)
+          # rarely change together, so a scope adds noise more often than meaning.
+          requireScope: false
+          # A length floor, and nothing cleverer. It catches "fix: wip" and "feat: x"; it cannot
+          # catch "fix: update css", and a regex that tried would fail honest titles more often
+          # than it caught lazy ones. Whether a subject actually says something is review's job.
+          # Case is left alone deliberately — the history is sentence case, not lowercase, and
+          # this check has no business rewriting that.
+          subjectPattern: ^.{15,}$
+          subjectPatternError: |
+            The subject "{subject}" of "{title}" is under 15 characters.
+            Say what changes for a reader, the way the existing history does — e.g.
+            "fix: carry the landing's headings through the auth pages".
