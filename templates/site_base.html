@@ -61,17 +61,25 @@ Pages fill:
   --shadow-lg: 0 8px 24px rgba(22,24,29,.10), 0 2px 6px rgba(22,24,29,.06);
   --on-accent: #ffffff;
   --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
-  /* One typeface for the whole site: whichever one the visitor's own system uses — SF Pro
-     on Apple, Segoe UI on Windows, Roboto on Android. Nothing is downloaded, so there is no
-     font file to host, no @font-face rule, and no dependency on collectstatic. That last
-     part is load-bearing: the landing page has to render correctly on a cold instance with
-     nothing collected, which is why it can't reference static files at all.
+  /* Both faces come from the visitor's own system, so nothing is downloaded: no font file to
+     host, no @font-face rule, and no dependency on collectstatic. That last part is
+     load-bearing — these pages have to render correctly on a cold instance with nothing
+     collected, which is why they can't reference static files at all.
 
-     Headings and body keep separate names because every component already asks for them by
-     name, but both now resolve to the same stack. The trade is that the site looks slightly
-     different per platform, which is the price of not shipping a font. */
+     Headings take the system serif, body the system sans — the same pair, resolved the same
+     way, as core/templates/core/landing.html. Keep the two files in step: they are the only
+     two that declare these tokens, and nothing tests that they agree.
+
+     This block briefly gave --font-display the sans stack, on the reasoning that marketing
+     gets a voice and product interface shouldn't. That drew the line in the wrong place. The
+     surface this file dresses — the landing's own header and footer, /signin, and every
+     allauth page — is all pre-login marketing; the sign-in card even sits beside a marketing
+     panel lifted from the landing. Splitting the two meant one wordmark in serif and the
+     identical wordmark one click later in sans. The product interface that should stay plain
+     is the signed-in dashboard, and that is a separate application in another repository. */
   --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
-  --font-display: var(--font-system);
+  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
+  --font-display: var(--font-serif);
   --font-sans: var(--font-system);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
