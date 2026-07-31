@@ -5,27 +5,12 @@ auth page (login, signup, code, reset, change). Replaces {{ form.as_p }}, whose 
 help text (e.g. the password rules) is tucked behind an (i) icon inside the input and shown as
 a tooltip on hover/focus, so it doesn't clutter the form. Defaults to the `form` in context;
 pass another with {% include "partials/_fields.html" with form=verify_form %}.
+
+Each field is drawn by partials/_input.html, which also documents `variant` — the field's
+plane. Every form in this project sits inside a card, so they all pass variant="on-surface";
+the unset default is there for a form rendered straight onto the page, which doesn't exist
+yet. Both `form` and `variant` reach the included partial through the shared context.
 {% endcomment %}
 {% for error in form.non_field_errors %}<div class="fld-err fld-err--form">{{ error }}</div>{% endfor %}
 {% for field in form.hidden_fields %}{{ field }}{% endfor %}
-{% for field in form.visible_fields %}
-  {% if field.field.widget.input_type == 'checkbox' %}
-  <label class="fld-check">{{ field }}<span>{{ field.label }}</span></label>
-  {% else %}
-  <div class="fld{% if field.errors %} fld--invalid{% endif %}">
-    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-    <div class="fld-input">
-      {{ field }}
-      {% if field.help_text %}
-      <span class="fld-info" tabindex="0" role="button" aria-label="{{ field.label }} requirements">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-          <circle cx="12" cy="12" r="9.25"/><path d="M12 11v5" stroke-linecap="round"/><path d="M12 7.75h.01" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="fld-tip" role="tooltip">{{ field.help_text|safe }}</span>
-      {% endif %}
-    </div>
-    {% for error in field.errors %}<div class="fld-err">{{ error }}</div>{% endfor %}
-  </div>
-  {% endif %}
-{% endfor %}
+{% for field in form.visible_fields %}{% include "partials/_input.html" %}{% endfor %}

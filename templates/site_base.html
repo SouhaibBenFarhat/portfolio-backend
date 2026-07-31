@@ -20,8 +20,36 @@ Pages fill:
 <style>
 /* Design tokens — the landing page's palette, so every auth screen reads as one product. */
 :root {
-  --bg: #faf8f4;
-  --surface: #ffffff;
+  /* ---- Elevation ---------------------------------------------------------
+     One rule in both themes: a step up is a step away from the page, toward --lift.
+     Every plane is derived from those two, so a new surface is a new percentage on
+     this scale — not a colour picked once for light and then picked again, by eye,
+     for dark.
+
+     Light used to break the rule. Its page was #faf8f4 and its card #ffffff, which
+     spent the whole range in one step and left anything raised *on* a card with
+     nowhere above it to go: the provider buttons came out the same white as the card
+     under them, separated only by a border and a shadow, while the same buttons in
+     dark climbed an obvious tone step. Elevation meant one thing in dark and another
+     in light. The page moved down to buy the missing step back.
+
+     The stops differ per theme on purpose. Light has to fit its whole ladder into the
+     narrow band between a warm off-white and pure white, so its fraction is large;
+     dark spans a far wider range and needs a small one. Equal percentages would hand
+     light three tones nobody can tell apart. */
+  --plane: #f0ebe0;   /* the page — the least elevated thing on screen */
+  --lift: #ffffff;    /* what "up" means in this theme */
+  --step: 55%;        /* where the middle plane sits between the two */
+  --e0: var(--plane);
+  --e1: color-mix(in srgb, var(--plane), var(--lift) var(--step));
+  --e2: var(--lift);
+
+  /* Semantic names for the planes. Everything else in the app uses these, never the
+     rungs, so the ladder can be retuned without touching a single component. */
+  --bg: var(--e0);       /* page, and inset wells: form fields sit back down here */
+  --surface: var(--e1);  /* cards, header, panels */
+  --raised: var(--e2);   /* raised on a card: the provider buttons */
+
   --text: #16181d;
   --muted: #5b616d;
   --line: #e9e4db;
@@ -32,28 +60,41 @@ Pages fill:
   --shadow-md: 0 2px 4px rgba(22,24,29,.05), 0 6px 16px rgba(22,24,29,.08);
   --shadow-lg: 0 8px 24px rgba(22,24,29,.10), 0 2px 6px rgba(22,24,29,.06);
   --on-accent: #ffffff;
-  --raised: var(--surface);
   --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
-  --font-display: 'Fraunces Variable', Fraunces, 'Iowan Old Style', Palatino, Georgia, serif;
-  --font-sans: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* One typeface for the whole site: whichever one the visitor's own system uses — SF Pro
+     on Apple, Segoe UI on Windows, Roboto on Android. Nothing is downloaded, so there is no
+     font file to host, no @font-face rule, and no dependency on collectstatic. That last
+     part is load-bearing: the landing page has to render correctly on a cold instance with
+     nothing collected, which is why it can't reference static files at all.
+
+     Headings and body keep separate names because every component already asks for them by
+     name, but both now resolve to the same stack. The trade is that the site looks slightly
+     different per platform, which is the price of not shipping a font. */
+  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-display: var(--font-system);
+  --font-sans: var(--font-system);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
+/* Dark only ever restates the three ladder inputs — the rungs, and every plane derived
+   from them, are declared once above. These values reproduce the dark palette this
+   replaced almost exactly (surface #15171b against the old #14171c, raised identical),
+   because dark was already doing the right thing; light was the mode that was broken. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d0f12; --surface: #14171c; --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
+    --plane: #0d0f12; --lift: #2d3035; --step: 25%;
+    --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
     --accent: #5cb6be; --accent-ink: #aee3e7; --danger: #ff9592;
     --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-md: 0 4px 14px rgba(0,0,0,.5); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
     --on-accent: #08272a;
-    --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
     --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d0f12; --surface: #14171c; --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
+  --plane: #0d0f12; --lift: #2d3035; --step: 25%;
+  --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
   --accent: #5cb6be; --accent-ink: #aee3e7; --danger: #ff9592;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-md: 0 4px 14px rgba(0,0,0,.5); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
   --on-accent: #08272a;
-  --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
   --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
 }
 
@@ -100,7 +141,23 @@ main.page.split .page-card { flex: 1 1 26rem; max-width: none; align-self: cente
 .ms-n { grid-row: 1 / span 2; font-family: var(--font-display); font-size: 2rem; font-weight: 600; color: var(--accent); line-height: 1; }
 .market-steps h3 { font-family: var(--font-display); font-size: 1.125rem; font-weight: 600; margin: .1rem 0 .35rem; color: var(--text); }
 .market-steps p { margin: 0; color: var(--muted); font-size: .9375rem; line-height: 1.55; }
-@media (max-width: 62rem) { .market { display: none; } main.page.split { padding: 2.5rem 1.5rem; align-items: center; } main.page.split .page-card { flex: 1 1 auto; align-self: auto; } }
+/* Below the split, the marketing panel goes and the card centres on its own.
+   .page-card's 2rem of side padding exists to inset the desktop column from the divider —
+   stacked, it sat inside main's padding and outside the card's own, so three paddings
+   compounded and squeezed the card to roughly half the screen: "Continue with Google" broke
+   onto two lines and the heading wrapped mid-phrase. Only the card's own padding belongs
+   here. */
+@media (max-width: 62rem) {
+  .market { display: none; }
+  main.page.split { padding: 2.5rem 1.5rem; align-items: center; }
+  main.page.split .page-card { flex: 1 1 auto; align-self: auto; padding: 0; }
+}
+/* Phones: the gutter and the card's own padding both come in, so the content column keeps
+   enough width for a provider label to stay on one line. */
+@media (max-width: 26rem) {
+  main.page, main.page.split { padding: 1.5rem 1rem; }
+  .auth-card { padding: 1.75rem 1.25rem; }
+}
 
 /* ---- Auth card ----------------------------------------------------------- */
 .auth-card { width: 100%; max-width: 25.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 2.25rem 2rem; }
@@ -126,6 +183,14 @@ main.page.split .page-card { flex: 1 1 26rem; max-width: none; align-self: cente
 .fld { display: flex; flex-direction: column; gap: .375rem; }
 .fld label { font-size: .8125rem; font-weight: 500; color: var(--muted); }
 .auth-form input:not([type=checkbox]):not([type=radio]), .auth-form select, .auth-form textarea { width: 100%; font-family: inherit; font-size: .9375rem; color: var(--text); background: var(--bg); border: 1px solid var(--raised-line); border-radius: 8px; padding: .625rem .75rem; transition: border-color .2s var(--ease); }
+/* A field on an elevated surface — see partials/_input.html, which documents the variant.
+   It rises to the writable plane instead of sinking into a well: on a card the recessed
+   fill is the same grey a disabled control is drawn in, and a field nobody can tell from a
+   disabled one is a bug, not a style. Elevation is for containers; a control's plane is
+   chosen for what it affords. */
+.fld--on-surface input:not([type=checkbox]):not([type=radio]),
+.fld--on-surface select,
+.fld--on-surface textarea { background: var(--raised); }
 .auth-form input:focus-visible, .auth-form textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
 .fld-check { display: flex; align-items: center; gap: .5rem; font-size: .875rem; color: var(--muted); cursor: pointer; }
 /* Help text (e.g. password rules) tucked into an (i) tooltip inside the input. */

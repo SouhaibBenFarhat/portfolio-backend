@@ -1,0 +1,44 @@
+{% comment %}
+One form field — label, control, optional help tooltip, errors. Split out of
+partials/_fields.html so a single field can be placed by hand (a page with no Django form
+object behind it, or a field that sits apart from the rest), and so the variant below is
+defined in exactly one place instead of being re-decided per page.
+
+`variant` picks the field's plane. It is about affordance, not depth:
+
+  (unset)       The field sits on the page, so it sinks into a well. Recessed against the
+                page around it, that reads as "type here".
+
+  on-surface    The field sits on an elevated surface — a card, a panel. It rises to the
+                writable plane instead of sinking, because on a card the recessed fill is
+                the same grey a disabled control is drawn in, and a field nobody can
+                distinguish from a disabled one is a bug, not a style. Elevation is for
+                containers; a control's plane is chosen for what it affords.
+
+Named for where the field is, not for how it ends up looking, so the call site states a
+fact it actually knows and the stylesheet stays free to change what that fact means.
+
+Pass it through the looper, once per form:
+    {% include "partials/_fields.html" with variant="on-surface" %}
+or place a single field directly:
+    {% include "partials/_input.html" with field=form.email variant="on-surface" %}
+{% endcomment %}
+{% if field.field.widget.input_type == 'checkbox' %}
+<label class="fld-check">{{ field }}<span>{{ field.label }}</span></label>
+{% else %}
+<div class="fld{% if variant %} fld--{{ variant }}{% endif %}{% if field.errors %} fld--invalid{% endif %}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+  <div class="fld-input">
+    {{ field }}
+    {% if field.help_text %}
+    <span class="fld-info" tabindex="0" role="button" aria-label="{{ field.label }} requirements">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.25"/><path d="M12 11v5" stroke-linecap="round"/><path d="M12 7.75h.01" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="fld-tip" role="tooltip">{{ field.help_text|safe }}</span>
+    {% endif %}
+  </div>
+  {% for error in field.errors %}<div class="fld-err">{{ error }}</div>{% endfor %}
+</div>
+{% endif %}

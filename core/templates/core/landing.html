@@ -34,8 +34,35 @@
    comes from the plane system (page → surface) and hairlines only.
    --------------------------------------------------------------------------- */
 :root {
-  --bg: #faf8f4;
-  --surface: #ffffff;
+  /* ---- Elevation ---------------------------------------------------------
+     One rule in both themes: a step up is a step away from the page, toward --lift.
+     Every plane is derived from those two, so a new surface is a new percentage on
+     this scale — not a colour picked once for light and then again, by eye, for dark.
+
+     Light used to break the rule. Its page was #faf8f4 and its card #ffffff, which
+     spent the whole range in one step and left anything raised *on* a card with
+     nowhere above it to go — it came out the same white as the card beneath it,
+     separated only by a border and a shadow, while the same element in dark climbed
+     an obvious tone step. The page moved down to buy the missing step back.
+
+     The stops differ per theme on purpose: light fits its ladder into the narrow band
+     between a warm off-white and pure white, so its fraction is large; dark spans a
+     far wider range and needs a small one. Equal percentages would hand light three
+     tones nobody can tell apart. Keep this block in step with templates/site_base.html
+     and templates/socialaccount/signup.html — the three token blocks are still copies. */
+  --plane: #f0ebe0;   /* the page — the least elevated thing on screen */
+  --lift: #ffffff;    /* what "up" means in this theme */
+  --step: 55%;        /* where the middle plane sits between the two */
+  --e0: var(--plane);
+  --e1: color-mix(in srgb, var(--plane), var(--lift) var(--step));
+  --e2: var(--lift);
+
+  /* Semantic names for the planes. Everything else uses these, never the rungs, so
+     the ladder can be retuned without touching a single component. */
+  --bg: var(--e0);       /* page, and inset wells: fields sit back down here */
+  --surface: var(--e1);  /* cards, header, panels */
+  --raised: var(--e2);   /* raised on a card: buttons, chips, bubbles */
+
   --text: #16181d;
   --muted: #5b616d;
   --line: #e9e4db;
@@ -48,18 +75,26 @@
   /* Text that sits on the accent fill. The dark accent is bright, so it needs ink
      rather than white to stay readable (the site makes the same swap). */
   --on-accent: #ffffff;
-  /* A plane that reads as raised. In light mode the shadow does that work, so this
-     is just the surface; in dark mode a shadow is invisible, so it has to be a
-     lighter plane instead. Keeping it a token is what lets every theme difference
-     live in these two blocks rather than scattered media queries. */
-  --raised: var(--surface);
   --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
 
   /* "… Variable" is the family name the site's self-hosted @fontsource-variable
      builds register. Listed first so this page matches exactly once those fonts
      are self-hosted here too; until then it falls back to a system serif/sans. */
-  --font-display: 'Fraunces Variable', Fraunces, 'Iowan Old Style', Palatino, Georgia, serif;
-  --font-sans: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* Both faces come from the visitor's own system, so nothing is downloaded: no font files
+     to host, no @font-face, and no static-file dependency — which this page needs, since it
+     is built to render on its own with nothing collected.
+
+     Headings use the system serif (New York on Apple, falling back to Georgia elsewhere) and
+     body uses the system sans (SF Pro on Apple, Segoe UI on Windows, Roboto on Android).
+     The marketing page carries the serif; the signed-in surface in site_base.html stays on
+     the sans throughout — marketing gets to have a voice, product interface shouldn't.
+
+     The trade is that this looks meaningfully different off Apple platforms, more so than
+     the sans does, because the fallbacks for a system serif vary far more widely. */
+  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
+  --font-display: var(--font-serif);
+  --font-sans: var(--font-system);
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -70,10 +105,15 @@
    explicit choice win. `:not([data-theme="light"])` is what allows someone on a
    dark OS to force light mode.
    ------------------------------------------------------------------------ */
+/* Dark restates only the three ladder inputs — the rungs, and every plane derived from
+   them, are declared once above. These reproduce the dark palette this replaced almost
+   exactly (surface #15171b against the old #14171c, raised identical): dark was already
+   doing the right thing, light was the mode that was broken. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d0f12;
-    --surface: #14171c;
+    --plane: #0d0f12;
+    --lift: #2d3035;
+    --step: 25%;
     --text: #e8e9ec;
     --muted: #99a0ac;
     --line: #222730;
@@ -83,13 +123,13 @@
     --shadow-md: 0 4px 14px rgba(0,0,0,.5);
     --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
     --on-accent: #08272a;
-    --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
     --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d0f12;
-  --surface: #14171c;
+  --plane: #0d0f12;
+  --lift: #2d3035;
+  --step: 25%;
   --text: #e8e9ec;
   --muted: #99a0ac;
   --line: #222730;
@@ -99,7 +139,6 @@
   --shadow-md: 0 4px 14px rgba(0,0,0,.5);
   --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
   --on-accent: #08272a;
-  --raised: color-mix(in srgb, var(--surface), var(--text) 12%);
   --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
 }
 
@@ -204,6 +243,21 @@ header {
 .theme-toggle[data-theme="dark"] .icon-sun { display: block; }
 .theme-toggle[data-theme="dark"] .icon-moon { display: none; }
 .header-actions { display: flex; align-items: center; gap: .75rem; }
+/* The theme toggle used to sit flush against "Create your page", which put a low-value
+   utility control right where the eye lands on the primary action, and gave the bar three
+   different shapes in a row with nothing grouping them. A hairline and real space either
+   side make it read as its own thing rather than the last nav item. The rule is on the
+   toggle rather than a wrapper so the mobile rule below, which hides the toggle outright,
+   takes the divider with it. */
+.header-actions .theme-toggle {
+  margin-left: .5rem;
+  margin-right: .75rem;
+  position: relative;
+}
+.header-actions .theme-toggle::before {
+  content: ""; position: absolute; left: -1rem; top: 50%; transform: translateY(-50%);
+  width: 1px; height: 1.25rem; background: var(--line);
+}
 /* In-page nav — hidden on mobile where the bar is already tight. */
 .nav { display: none; }
 @media (min-width: 860px) { .nav { display: flex; gap: 1.5rem; margin-right: .25rem; } }
@@ -238,11 +292,16 @@ header {
   /* Left column: the flow top-to-bottom (graph → computer); right column: the copy. */
   .hero-2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); column-gap: 3rem; align-items: start; }
   .hero-copy { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
-  .hero-2 .flow { grid-column: 1; grid-row: 1; margin-top: 0; display: flex; flex-direction: column; align-items: center; }
+  /* Placement only — the column layout itself is on .flow, so it holds at every width. */
+  .hero-2 .flow { grid-column: 1; grid-row: 1; margin-top: 0; }
   .stage-screen { grid-column: 1; grid-row: 2; margin-top: 3.25rem; }
 }
 .stage-screen { display: flex; flex-direction: column; align-items: center; }
 .stage-screen .lid { width: 100%; }
+/* Stacked, the address bar above sat flush on the screen's top edge, so the two read as one
+   welded object instead of a browser being pointed at a page. The desktop layout sets its
+   own margin inside the grid rule above, which is why this only applies below it. */
+@media (max-width: 59.99rem) { .stage-screen { margin-top: 1.75rem; } }
 
 /* Vertical graph: square source tiles → a merge → the agent, then the connector to the screen. */
 .sources-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; width: 100%; }
@@ -325,6 +384,18 @@ h1 em { font-style: normal; color: var(--accent); }
 /* The one-click sign-in form is layout-transparent, so its button aligns in the actions
    row exactly like the sibling link-button beside it. */
 .hero-actions form { display: contents; }
+/* The primary sits last in the markup so it lands on the right of the row, where the eye
+   finishes reading.
+
+   On a phone the two buttons sized to their own text, so they came out different widths and
+   left a ragged edge down the side of the column. Full width gives them one edge and a
+   bigger tap target. `column-reverse` then puts the primary back on top: last-on-the-right
+   is the convention for a row, but last-in-a-stack would bury the main action under the
+   secondary one, so the source order serves the row and this flips it for the stack. */
+@media (max-width: 39.99rem) {
+  .hero-actions { flex-direction: column-reverse; align-items: stretch; }
+  .hero-actions .btn, .hero-actions .btn-solid { width: 100%; justify-content: center; }
+}
 /* "Continue with Google" — the accent primary, with the real multicolour G held in a white
    chip so it stays recognisable and legible on the teal fill (a bare colour G on teal muds
    together). The chip keeps the button on-brand while the mark stays Google's. */
@@ -349,7 +420,11 @@ h1 em { font-style: normal; color: var(--accent); }
    Orthogonal hairlines rather than organic curves — it reads as a circuit,
    which is calmer and more technical than a swoosh.
    ------------------------------------------------------------------------ */
-.flow { margin-top: 1.5rem; }
+/* Centred at every width, not just on desktop. The column used to be laid out only inside
+   the two-column media query, so below it the graph's connectors — which are plain blocks
+   with a fixed width — fell to the left edge and left a stub of teal line hanging beside
+   the chip instead of running down the middle. */
+.flow { margin-top: 1.5rem; display: flex; flex-direction: column; align-items: center; }
 @media (min-width: 768px) { .flow { margin-top: 1.75rem; } }
 
 .flow-grid {
@@ -1367,6 +1442,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
     </p>
 
     <div class="hero-actions enter d2">
+      <a href="#how" class="btn">See how it works</a>
       <form {% if google_configured %}method="post" action="{{ google_login_url }}?process=login"{% else %}method="get" action="/signin"{% endif %}>
         {% if google_configured %}{% csrf_token %}{% else %}<input type="hidden" name="unavailable" value="Google">{% endif %}
         <button type="submit" class="btn-solid btn-google">
@@ -1381,114 +1457,18 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
           Continue with Google
         </button>
       </form>
-      <a href="#how" class="btn">See how it works</a>
     </div>
     <p class="hero-more enter d2">Prefer GitHub or LinkedIn? <a href="/signin">More sign-in options</a></p>
     </div><!-- /.hero-copy -->
 
-    <!-- Only the screen moves up here, into the hero's right, filling the empty space; a
-         cable runs down to the keyboard in the graph below. Hidden from assistive tech. -->
-    <div class="stage-screen" aria-hidden="true">
-      <div class="lid">
-        <div class="screen">
-          <div class="chrome">
-            <div class="tabstrip">
-              <span class="dots"><i></i><i></i><i></i></span>
-              <span class="tab">
-                <svg class="tab-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
-                <span class="tab-t">hirees.me</span>
-                <svg class="tab-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-              </span>
-              <svg class="newtab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-            </div>
-            <div class="toolbar">
-              <span class="navs">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
-              </span>
-              <div class="omnibox">
-                <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
-                <span class="addr"><b>you</b>.hirees.me</span>
-                <span class="live-tag"><span class="live-dot"></span>Live</span>
-              </div>
-              <svg class="menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
-            </div>
-          </div>
-          <div class="screen-panes">
-            <div class="cv-pane">
-              <div class="cv-page">
-              <div class="cv-head">
-                <div class="cv-avatar" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="12" cy="8.8" r="4.2"/>
-                    <path d="M12 13.4c-5.2 0-8.7 3.5-8.7 8.7V24h17.4v-1.9c0-5.2-3.5-8.7-8.7-8.7z"/>
-                  </svg>
-                </div>
-                <div class="cv-id">
-                  <span class="cv-name">Maya Lindqvist</span>
-                  <span class="cv-role">Senior Platform Engineer</span>
-                  <span class="cv-contact">maya@hey.com · Berlin</span>
-                </div>
-              </div>
+    <!-- Your material → the assistant → the address it answers on. Decorative, hidden from
+         assistive tech.
 
-              <p class="cv-summary">Builds and runs the platforms other teams ship on — Kubernetes, Go, and a great deal of Terraform.</p>
-
-              <div class="cv-sec">Experience</div>
-              <div class="cv-timeline">
-                <div class="cv-item">
-                  <div class="cv-item-h"><span class="cv-item-t">Staff Engineer · Northwind</span></div>
-                  <div class="cv-item-d">Owns the platform behind more than 40 services.</div>
-                </div>
-                <div class="cv-item">
-                  <div class="cv-item-h"><span class="cv-item-t">Backend Engineer · Kesler</span></div>
-                  <div class="cv-item-d">Builds Go payment services and their Terraform.</div>
-                </div>
-                <div class="cv-item">
-                  <div class="cv-item-h"><span class="cv-item-t">Software Engineer · Vela</span></div>
-                  <div class="cv-item-d">Shipped the first billing API and its runbooks.</div>
-                </div>
-              </div>
-
-              <div class="cv-sec">Skills</div>
-              <div class="cv-tags"><span>Kubernetes</span><span>Go</span><span>Terraform</span><span>Postgres</span><span>AWS</span></div>
-
-              <div class="cv-sec">Education</div>
-              <div class="cv-item">
-                <div class="cv-item-h"><span class="cv-item-t">B.Sc. Computer Science · TU Berlin</span><span class="cv-item-y">2015</span></div>
-              </div>
-              </div><!-- /.cv-page -->
-            </div>
-            <div class="chat-pane">
-              <div class="chat-id"><span class="live"></span> Maya's assistant</div>
-              <div class="r-thread" id="r-thread"></div>
-              <div class="r-composer">
-                <span class="r-typed" id="r-typed"></span><span class="caret"></span>
-                <span class="r-send" id="r-send">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 19V5M6 11l6-6 6 6"/>
-                  </svg>
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <span class="stand-neck"></span>
-      <span class="stand-foot"></span>
-      <div class="desk">
-        <div class="kb" id="kb">
-          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-          <div class="kb-row"><i class="md"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="md"></i></div>
-          <div class="kb-row"><i class="md"></i><i class="wide"></i><i class="md"></i></div>
-        </div>
-        <div class="mouse" id="mouse"></div>
-      </div>
-    </div>
-
-    <!-- The graph sits under the hero: your material → the assistant → the keyboard you
-         type on. Decorative, hidden from assistive tech. -->
+         This sits BEFORE the screen in the markup deliberately: it is the order the story
+         reads in, and below the two-column breakpoint the hero simply stacks in source
+         order. It used to come after, and desktop only looked right because the grid below
+         places both explicitly by row — so on a phone the screen appeared before the graph
+         feeding it and the whole thing ran backwards. -->
     <div class="flow enter d3" aria-hidden="true">
       <!-- Square source tiles across the top, merging down into the agent below. -->
       <div class="sources-row">
@@ -1638,6 +1618,108 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
           </span>
         </div>
 
+    </div>
+
+    <!-- The screen the graph feeds into, plus the desk under it. On desktop the grid lifts
+         this into the hero's right-hand space; stacked, it simply follows the graph.
+         Hidden from assistive tech. -->
+    <div class="stage-screen" aria-hidden="true">
+      <div class="lid">
+        <div class="screen">
+          <div class="chrome">
+            <div class="tabstrip">
+              <span class="dots"><i></i><i></i><i></i></span>
+              <span class="tab">
+                <svg class="tab-fav" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 000 18 14.5 14.5 0 000-18"/></svg>
+                <span class="tab-t">hirees.me</span>
+                <svg class="tab-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </span>
+              <svg class="newtab" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <div class="toolbar">
+              <span class="navs">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.64-6.36M21 4v5h-5"/></svg>
+              </span>
+              <div class="omnibox">
+                <svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>
+                <span class="addr"><b>you</b>.hirees.me</span>
+                <span class="live-tag"><span class="live-dot"></span>Live</span>
+              </div>
+              <svg class="menu" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>
+            </div>
+          </div>
+          <div class="screen-panes">
+            <div class="cv-pane">
+              <div class="cv-page">
+              <div class="cv-head">
+                <div class="cv-avatar" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="8.8" r="4.2"/>
+                    <path d="M12 13.4c-5.2 0-8.7 3.5-8.7 8.7V24h17.4v-1.9c0-5.2-3.5-8.7-8.7-8.7z"/>
+                  </svg>
+                </div>
+                <div class="cv-id">
+                  <span class="cv-name">Maya Lindqvist</span>
+                  <span class="cv-role">Senior Platform Engineer</span>
+                  <span class="cv-contact">maya@hey.com · Berlin</span>
+                </div>
+              </div>
+
+              <p class="cv-summary">Builds and runs the platforms other teams ship on — Kubernetes, Go, and a great deal of Terraform.</p>
+
+              <div class="cv-sec">Experience</div>
+              <div class="cv-timeline">
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Staff Engineer · Northwind</span></div>
+                  <div class="cv-item-d">Owns the platform behind more than 40 services.</div>
+                </div>
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Backend Engineer · Kesler</span></div>
+                  <div class="cv-item-d">Builds Go payment services and their Terraform.</div>
+                </div>
+                <div class="cv-item">
+                  <div class="cv-item-h"><span class="cv-item-t">Software Engineer · Vela</span></div>
+                  <div class="cv-item-d">Shipped the first billing API and its runbooks.</div>
+                </div>
+              </div>
+
+              <div class="cv-sec">Skills</div>
+              <div class="cv-tags"><span>Kubernetes</span><span>Go</span><span>Terraform</span><span>Postgres</span><span>AWS</span></div>
+
+              <div class="cv-sec">Education</div>
+              <div class="cv-item">
+                <div class="cv-item-h"><span class="cv-item-t">B.Sc. Computer Science · TU Berlin</span><span class="cv-item-y">2015</span></div>
+              </div>
+              </div><!-- /.cv-page -->
+            </div>
+            <div class="chat-pane">
+              <div class="chat-id"><span class="live"></span> Maya's assistant</div>
+              <div class="r-thread" id="r-thread"></div>
+              <div class="r-composer">
+                <span class="r-typed" id="r-typed"></span><span class="caret"></span>
+                <span class="r-send" id="r-send">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 19V5M6 11l6-6 6 6"/>
+                  </svg>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span class="stand-neck"></span>
+      <span class="stand-foot"></span>
+      <div class="desk">
+        <div class="kb" id="kb">
+          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="kb-row"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="kb-row"><i class="md"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="md"></i></div>
+          <div class="kb-row"><i class="md"></i><i class="wide"></i><i class="md"></i></div>
+        </div>
+        <div class="mouse" id="mouse"></div>
+      </div>
     </div>
   </div>
 </div>
