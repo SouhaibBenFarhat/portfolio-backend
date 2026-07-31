@@ -77,17 +77,16 @@
   --on-accent: #ffffff;
   --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
 
-  /* "… Variable" is the family name the site's self-hosted @fontsource-variable
-     builds register. Listed first so this page matches exactly once those fonts
-     are self-hosted here too; until then it falls back to a system serif/sans. */
   /* Both faces come from the visitor's own system, so nothing is downloaded: no font files
      to host, no @font-face, and no static-file dependency — which this page needs, since it
      is built to render on its own with nothing collected.
 
      Headings use the system serif (New York on Apple, falling back to Georgia elsewhere) and
      body uses the system sans (SF Pro on Apple, Segoe UI on Windows, Roboto on Android).
-     The marketing page carries the serif; the signed-in surface in site_base.html stays on
-     the sans throughout — marketing gets to have a voice, product interface shouldn't.
+     templates/site_base.html declares the identical pair for /signin and every allauth page,
+     so a visitor moving from here into sign-up keeps the same wordmark and the same headings.
+     These two files are the only ones that declare these tokens and nothing tests that they
+     agree — change them together.
 
      The trade is that this looks meaningfully different off Apple platforms, more so than
      the sans does, because the fallbacks for a system serif vary far more widely. */
