@@ -14,7 +14,8 @@ Domain/DNS/hosting is in `docs/infrastructure.md`; the build roadmap is in
 - The entry pages are **server-rendered in the site's own design** (not allauth's default
   templates): the landing hero leads with a one-click **Continue with Google**, and **`/signin`**
   shows all three providers. After sign-in a visitor is redirected to the **dashboard SPA at
-  `app.hirees.me`** (`LOGIN_REDIRECT_URL`); **sign-out** returns to the public landing.
+  `app.hirees.me`** (`LOGIN_REDIRECT_URL`); **sign-out** returns to `/signin`
+  (`ACCOUNT_LOGOUT_REDIRECT_URL = LOGIN_URL`), so signing out leads straight back to a way in.
 - allauth handles the OAuth callback on the backend. The callback path is
   `/accounts/<provider>/login/callback/` — for LinkedIn it's `/accounts/oidc/linkedin/login/callback/`.
 
@@ -127,21 +128,54 @@ on (`hirees.me`, and `localhost` for dev); `127.0.0.1` counts as a different hos
   and the LinkedIn redirect URLs **must** use that `oidc/linkedin` path (prod + localhost) or
   sign-in returns a `redirect_uri` mismatch.
 
-## Account linking — a sharp edge to tighten before public launch
+## Account linking — one person, one account
 
-allauth links a social login to an **existing account with the same email**. That's why the
-owner signing in with LinkedIn lands on their existing Django **superuser** account and can
-reach `/admin` — expected for the owner, but a **security risk in general**: if a provider
-ever returns an email the account owner never verified, an attacker could take over a matching
-account. A brand-new email just creates a plain user (`is_staff=False`, no `/admin`).
+Someone who signs up with email + password and later clicks "Continue with Google" is the same
+person, and lands on the **same account**. Both routes keep working from then on.
 
-Now that **email + password** accounts exist, an email can be owned by a local account too, which
-raises the stakes. The conservative default is already in place — `SOCIALACCOUNT_EMAIL_AUTHENTICATION`
-is `False`, so a social login does **not** silently authenticate into an existing local account by
-email match. Still tracked before sign-in goes public (Phase 2): add an explicit `pre_social_login`
-guard that refuses to link onto an existing account via an **unverified** provider email, and never
-auto-grant `is_staff`. This was deliberately left out of the email+password change to avoid touching
-the working social flow without provider-level integration testing.
+Before this, they didn't. allauth's default is to refuse: it emailed an **"Account Already
+Exists"** notice and dropped the visitor on a confirm-email page instead of signing them in.
+Two things were wrong with that. It's a dead end — nobody remembers which button they used
+months ago. And because the notice is an *email*, a mail server that's down turned the whole
+OAuth callback into a **500** (nothing catches the send; see "When mail is down" below).
+
+**Whether a provider may do this is per credential row**, not a global switch:
+*Social login apps* → **Link by verified email**. allauth reads the app's
+`email_authentication` setting before any global one, which is the only way to express it —
+every OpenID Connect service shares the provider id `openid_connect`, so a settings-level flag
+could not trust LinkedIn without also trusting the next OIDC provider added. `core.adapter`
+carries the row's flag onto the in-memory `SocialApp`.
+
+Two guards make this safe, and they are the reason it isn't simply on for everyone:
+
+- **The provider's `verified` flag, not the provider.** allauth only ever matches on addresses
+  the provider reports as verified (`adapter.authenticate_by_email`). Google and LinkedIn assert
+  `email_verified` in the id token; GitHub's `user:email` scope reports it per address. A
+  provider that hands back an address it never checked is exactly how an attacker would walk
+  into someone else's account — hence **off by default** for any row nobody has assessed.
+  Migration `core/0003` turns it on for the three providers already registered; a row added
+  later starts off, so adding a provider stays a deliberate decision.
+- **The password is wiped if the local address was never verified.** That's allauth's
+  `wipe_password`: if an attacker registered your address and never confirmed it, they know a
+  password to an account you're about to be linked into. Wiping locks them out. Our own sign-ups
+  verify by code, so a real user's password **survives** and both routes keep working.
+
+`SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True` writes the `SocialAccount` link on the
+first such sign-in. Without it allauth signs the visitor in but stores nothing, so it re-matches
+on the address every single time — and sign-in breaks the day they change their email.
+
+Note the `is_staff` consequence is unchanged and expected: the owner's account *is* the Django
+superuser, so signing in with a linked provider reaches `/admin`. A brand-new email still just
+creates a plain user (`is_staff=False`). Nothing here ever grants staff.
+
+### When mail is down
+
+The "Account Already Exists" path is gone for trusted providers, but the underlying fragility
+isn't: allauth sends transactional mail **inline during the request**, and a failing send raises
+straight out of the view. With no `LOGGING` configured (see `docs/infrastructure.md`) that
+surfaces as a bare `Server Error (500)` with no trace anywhere. If sign-in or sign-up 500s,
+**check Brevo first** — the same backend sends the verification code, so a mail outage breaks
+account creation too.
 
 ## Session strategy — how the SPA knows you're signed in
 

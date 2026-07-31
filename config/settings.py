@@ -209,6 +209,17 @@ ACCOUNT_RATE_LIMITS = {
 SOCIALACCOUNT_EMAIL_REQUIRED = False
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
+# Someone who signed up with email+password and later clicks "Continue with Google" is the
+# same person, and should land on the same account rather than be told it already exists.
+# WHICH providers may do that is decided per credential row in the admin
+# (OAuthCredential.link_by_verified_email → the app's `email_authentication` setting), not
+# here: every OpenID Connect service shares the provider id "openid_connect", so a global
+# flag could not trust LinkedIn without also trusting the next OIDC provider added. This
+# setting only says what happens once such a login is allowed — write the SocialAccount
+# link. Without it allauth signs them in but stores nothing, so it re-matches on the email
+# every single time and sign-in breaks the day they change their address.
+SOCIALACCOUNT_EMAIL_AUTHENTICATION_AUTO_CONNECT = True
+
 # The auth flow is server-rendered for now — a /signin page and an /app dashboard stub, in
 # the site's design — so allauth serves its classic endpoints (provider login/callback and
 # logout) that those pages post to. HEADLESS_ONLY stays False; when the dashboard becomes a

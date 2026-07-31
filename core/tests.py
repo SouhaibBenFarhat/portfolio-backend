@@ -1,7 +1,9 @@
 import re
+from unittest import mock
 
 import pytest
 import yaml
+from django.conf import settings
 from django.core import mail
 from django.test import Client
 from django.urls import reverse
@@ -209,6 +211,177 @@ def test_adapter_ignores_inactive_credentials():
         provider="github", client_id="gid", secret="gsec", is_active=False
     )
     assert get_adapter().list_apps(None, provider="github") == []
+
+
+# --- Linking a social login to an existing account ------------------------
+# Someone who signed up with email+password and later clicks "Continue with Google" is the
+# same person. Without this they were told "Account Already Exists" and left on a dead end —
+# and because that notice is an email, a broken mail server turned the whole callback into a
+# 500. Whether a provider may do this is per credential row: allauth reads the app's
+# `email_authentication` setting before any global one, which is the only way to say "trust
+# LinkedIn" without also trusting the next OpenID Connect provider added (they share the
+# provider id "openid_connect").
+
+
+@pytest.mark.django_db
+def test_credential_carries_its_linking_decision_to_allauth():
+    """The row's flag reaches allauth as the app's `email_authentication` setting, which is
+    what it consults before falling back to any global value."""
+    from allauth.socialaccount.adapter import get_adapter
+
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=True
+    )
+    assert get_adapter().get_app(None, provider="google").settings["email_authentication"] is True
+
+
+@pytest.mark.django_db
+def test_linking_is_off_until_a_provider_is_explicitly_trusted():
+    """The default is off, and it is sent as an explicit False rather than left absent — an
+    absent key would let allauth fall through to a global setting this row never opted into."""
+    from allauth.socialaccount.adapter import get_adapter
+
+    from core.models import OAuthCredential
+
+    cred = OAuthCredential.objects.create(provider="github", client_id="gh-id", secret="gh-sec")
+    assert cred.link_by_verified_email is False
+    assert get_adapter().get_app(None, provider="github").settings["email_authentication"] is False
+
+
+def _google_signin(client, *, email, email_verified=True):
+    """Drive a real Google sign-in, stubbing only Google itself.
+
+    The token exchange and the id-token check are the two places that talk to Google; the
+    rest is our own callback path, which is what these tests are about.
+    """
+    from urllib.parse import parse_qs, urlparse
+
+    claims = {
+        "iss": "https://accounts.google.com",
+        "aud": "g-id",
+        "sub": "google-uid-1",
+        "email": email,
+        "email_verified": email_verified,
+        "name": "Ada Lovelace",
+    }
+    start = client.post("/accounts/google/login/?process=login")
+    state = parse_qs(urlparse(start["Location"]).query)["state"][0]
+    with (
+        mock.patch(
+            "allauth.socialaccount.providers.oauth2.client.OAuth2Client.get_access_token",
+            return_value={"access_token": "tok", "id_token": "id.tok", "expires_in": 3599},
+        ),
+        mock.patch(
+            "allauth.socialaccount.providers.google.views._verify_and_decode",
+            return_value=claims,
+        ),
+    ):
+        return client.get("/accounts/google/login/callback/", {"state": state, "code": "auth-code"})
+
+
+@pytest.mark.django_db
+def test_a_trusted_providers_verified_email_signs_into_the_existing_account():
+    """The whole point: a password account and a Google login on the same verified address
+    are one person, so the visitor is signed in rather than told the account already exists."""
+    from django.contrib.auth import get_user_model
+
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=True
+    )
+    user = _verified_user("ada@example.com")
+
+    client = Client()
+    response = _google_signin(client, email="ada@example.com")
+
+    assert response.status_code == 302
+    assert response["Location"] == settings.APP_URL
+    assert client.session["_auth_user_id"] == str(user.pk)
+    assert get_user_model().objects.count() == 1, "must reuse the account, not make a second"
+
+
+@pytest.mark.django_db
+def test_linking_writes_the_connection_so_later_sign_ins_do_not_re_match_the_email():
+    """AUTO_CONNECT stores the SocialAccount. Without it allauth signs them in but records
+    nothing, so it re-matches on the address every time and sign-in dies the day they
+    change it."""
+    from allauth.socialaccount.models import SocialAccount
+
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=True
+    )
+    user = _verified_user("ada@example.com")
+
+    _google_signin(Client(), email="ada@example.com")
+
+    assert SocialAccount.objects.filter(user=user, provider="google").exists()
+
+
+@pytest.mark.django_db
+def test_a_password_survives_linking_so_both_routes_keep_working():
+    """allauth wipes the password when it links onto an *unverified* address (that account
+    may be a squatter's). Ours are verified by code at sign-up, so the password stays and
+    the visitor can still sign in either way."""
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=True
+    )
+    user = _verified_user("ada@example.com")
+
+    _google_signin(Client(), email="ada@example.com")
+
+    user.refresh_from_db()
+    assert user.has_usable_password()
+    assert Client().login(username=user.username, password=_STRONG_PASSWORD)
+
+
+@pytest.mark.django_db
+def test_an_unverified_address_never_links_even_from_a_trusted_provider():
+    """Trust lives in the provider's *verified* flag, not in the provider itself. An address
+    handed over unchecked is exactly the account-takeover case, so it must not link."""
+    from django.contrib.auth import get_user_model
+
+    from core.models import OAuthCredential
+
+    OAuthCredential.objects.create(
+        provider="google", client_id="g-id", secret="g-sec", link_by_verified_email=True
+    )
+    _verified_user("ada@example.com")
+
+    response = _google_signin(Client(), email="ada@example.com", email_verified=False)
+
+    assert response["Location"] != settings.APP_URL
+    assert get_user_model().objects.get(email="ada@example.com").has_usable_password()
+
+
+@pytest.mark.django_db
+def test_the_migration_trusts_the_providers_already_registered():
+    """Migration 0003 turns linking on for the providers actually in use, so the fix reaches
+    production without anyone having to remember a checkbox — while a row added afterwards
+    still starts off, keeping a new provider a deliberate decision."""
+    import importlib
+
+    from django.apps import apps as global_apps
+
+    from core.models import OAuthCredential
+
+    google = OAuthCredential.objects.create(provider="google", client_id="g", secret="s")
+    assert google.link_by_verified_email is False
+
+    migration = importlib.import_module("core.migrations.0003_trust_the_registered_providers")
+    migration.trust_registered_providers(global_apps, None)
+
+    google.refresh_from_db()
+    assert google.link_by_verified_email is True
+
+    added_later = OAuthCredential.objects.create(provider="github", client_id="x", secret="y")
+    assert added_later.link_by_verified_email is False
 
 
 # --- Sign-in page ---------------------------------------------------------

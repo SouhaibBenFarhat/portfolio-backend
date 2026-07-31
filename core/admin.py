@@ -51,10 +51,11 @@ class OAuthCredentialAdmin(ModelAdmin):
         "provider",
         "provider_id",
         "masked_secret",
+        "link_by_verified_email",
         "is_active",
         "updated_at",
     )
-    list_filter = ("provider", "is_active")
+    list_filter = ("provider", "link_by_verified_email", "is_active")
     list_editable = ("is_active",)
     search_fields = ("name", "provider", "provider_id", "client_id")
     fields = (
@@ -64,6 +65,7 @@ class OAuthCredentialAdmin(ModelAdmin):
         "client_id",
         "secret",
         "server_url",
+        "link_by_verified_email",
         "is_active",
     )
 
