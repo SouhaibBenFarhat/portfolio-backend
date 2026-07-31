@@ -1,0 +1,27 @@
+{% comment %}
+The hirees.me mark: a lowercase "h" closed by the full stop of ".me", on a petrol tile.
+Included by every server-rendered page that shows the wordmark — templates/site_base.html
+(and so every allauth page through it), core/templates/core/landing.html, and
+templates/socialaccount/signup.html, which sits outside the shell but can still include
+this.
+
+A filled tile rather than bare strokes, deliberately: a naked "h" beside the word "hirees"
+stutters, because the eye reads it as a letter and starts the name twice. A tile reads as
+an object. The fills are tokens, so it follows the theme; size comes from `.logo`, which
+each page defines.
+
+THE OTHER COPY: core/views.py draws the same letter for /favicon.svg and /favicon-full.svg.
+It can't share this file — a favicon is served standalone, so it needs literal colours
+rather than CSS variables, its own <svg xmlns>, and a second heavier weight for the browser
+tab. Two sources is the floor, not four. `test_the_template_mark_and_the_generated_favicon_
+are_the_same_drawing` in core/tests.py fails if they drift apart.
+{% endcomment %}
+<svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+  <rect width="32" height="32" rx="7" fill="var(--accent)"/>
+  <g transform="translate(4 4)" fill="none" stroke="var(--on-accent)" stroke-width="2.3"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5.6 3.4V20.6"/>
+    <path d="M5.6 11.8h6a2 2 0 0 1 2 2V20.6"/>
+    <circle cx="18" cy="19.1" r="1.5" fill="var(--on-accent)" stroke="none"/>
+  </g>
+</svg>

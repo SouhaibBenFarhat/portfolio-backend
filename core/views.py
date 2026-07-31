@@ -19,66 +19,74 @@ from rest_framework.response import Response
 from .providers import PROVIDERS, configured_provider_ids
 from .serializers import HealthSerializer, MeSerializer, ServiceDescriptorSerializer
 
-# The hirees.me mark: a CV with a brain badged into its corner — a document that thinks.
-# Composed from two Lucide icons (file-text + brain, ISC licensed, https://lucide.dev),
-# the same icon set the frontend uses, so the mark and the interface stay consistent.
+# The hirees.me mark: a lowercase "h" closed by the full stop of ".me", on a petrol tile.
+# Drawn on Lucide's 24x24 grid with its stroke conventions (round caps and joins, no fill,
+# https://lucide.dev) — the same icon set the frontend uses — so the mark sits in the same
+# drawing language as the interface around it, even though it is a letter and not an icon.
 #
-# The disc behind the brain is filled with the tile colour rather than left transparent:
-# it knocks the page's own strokes out from behind the badge, so the two icons read as one
-# object instead of overlapping line work.
+# The shoulder turns through a 2.1 corner rather than a right angle. A hard corner reads as
+# interface chrome and argues with the Fraunces wordmark beside it; a fully round arch reads
+# as a typeface the site doesn't own and has no business imitating. The radius is the
+# settlement, and it tracks the stroke weight.
 #
-# Petrol (#1f6f78) is the site's accent — see the token block in the landing template. The
-# previous favicon was an "S" on an indigo→violet gradient, which belonged to neither the
-# backend's palette nor hirees.me's.
+# It replaced a CV with a brain badged into its corner. That mark needed two separate
+# drawings, because at 16px its three text lines merged into the badge and the whole thing
+# turned to mud — a problem a letterform simply does not have. That is the argument for a
+# monogram here, more than any aesthetic one.
+#
+# Petrol (#1f6f78) is the site's accent — see the token block in the landing template.
+#
+# THE OTHER COPY: templates/partials/_logo.html draws the same letter for every page that
+# shows the wordmark. It can't share this code — a favicon is served standalone, so it needs
+# literal colours rather than CSS variables, its own <svg xmlns>, and a second heavier
+# weight for the browser tab. Two sources is the floor here, not four, and
+# test_the_template_mark_and_the_generated_favicon_are_the_same_drawing fails if they part.
 _MARK_COLOUR = "#1f6f78"
 
-# The page, its folded corner, and the brain — the parts every size keeps.
-_PAGE = (
-    '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588'
-    'A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>'
-    '<path d="M14 2v5a1 1 0 0 0 1 1h5"/>'
-)
-_LINES = '<path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>'
-_BRAIN = (
-    '<path d="M12 18V5"/>'
-    '<path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/>'
-    '<path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/>'
-    '<path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/>'
-    '<path d="M18 18a4 4 0 0 0 2-7.464"/>'
-    '<path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/>'
-    '<path d="M6 18a4 4 0 0 1-2-7.464"/>'
-    '<path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>'
-)
+# The letter, on Lucide's 24x24 grid: an ascender, then a shoulder that turns down into the
+# leg. Ink is centred on the box in both axes — the dot's mass out to the right is what
+# balances the stem's out to the left, so the two are drawn as one composition, not a glyph
+# with punctuation added afterwards.
+#
+# Two numbers here were set by looking at the thing rendered, not by arithmetic, and both
+# only misbehave at tab size:
+#   - the x-height is generous (8.8 of a 17.2 ascender). A tall x-height is what keeps a
+#     lowercase letter legible when it is small, because the counter is the first thing to
+#     silt up; an elegant small counter reads as a smudge at 16px.
+#   - the shoulder is narrow enough to leave real air before the dot. Set tight, the dot
+#     welds onto the leg and stops reading as punctuation — it becomes a bullet.
+_BASELINE = 20.6
+_DOT_X = 18.0
+_LETTER = '<path d="M5.6 3.4V20.6"/><path d="M5.6 11.8h6a2 2 0 0 1 2 2V20.6"/>'
 
 
-def _mark(*, lines: bool, stroke: float, badge: float) -> str:
-    """The mark on a petrol tile. `badge` scales the brain; `lines` keeps the page's text.
+def _mark(*, stroke: float, dot: float) -> str:
+    """The mark on a petrol tile, at one optical size.
 
-    The disc behind the brain is filled with the tile colour rather than left transparent,
-    so the page's own strokes stop behind the badge and the two icons read as one object.
+    One drawing serves every size — that is the whole point of a letter here. What changes
+    is weight: small sizes need more of it, the way a type family cuts a heavier face for
+    small text rather than shrinking the display one. Thin strokes and a small dot are the
+    first things a 16px raster throws away.
+
+    The dot sits *on* the baseline, so its centre has to rise as its radius grows.
     """
-    offset = 18 - 12 * badge  # keeps the brain centred on the disc at any scale
+    full_stop = (
+        f'<circle cx="{_DOT_X}" cy="{round(_BASELINE - dot, 3)}" r="{dot}" '
+        'fill="#ffffff" stroke="none"/>'
+    )
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
         f'<rect width="32" height="32" rx="7" fill="{_MARK_COLOUR}"/>'
         f'<g transform="translate(4 4)" fill="none" stroke="#ffffff" stroke-width="{stroke}" '
-        'stroke-linecap="round" stroke-linejoin="round">'
-        + _PAGE
-        + (_LINES if lines else "")
-        + f'<circle cx="18" cy="18" r="6.6" fill="{_MARK_COLOUR}" stroke="none"/>'
-        + f'<g transform="translate({offset} {offset}) scale({badge})">{_BRAIN}</g>'
-        + "</g></svg>"
+        'stroke-linecap="round" stroke-linejoin="round">' + _LETTER + full_stop + "</g></svg>"
     )
 
 
 # Full mark, for anywhere with room: 32px and up.
-FAVICON_SVG = _mark(lines=True, stroke=2, badge=0.46)
+FAVICON_SVG = _mark(stroke=2.3, dot=1.5)
 
-# Small variant, for the browser tab. A page, a brain and three lines of text is too much
-# detail for 16 pixels — the lines merge into the brain and the whole thing turns to mud.
-# So the text goes, the brain grows, and the strokes thicken. Redrawing a mark for small
-# sizes is normal practice; scaling one down is what produces the mud.
-FAVICON_SMALL_SVG = _mark(lines=False, stroke=2.4, badge=0.54)
+# The browser tab, which renders at 16-20px. Same letter, more weight.
+FAVICON_SMALL_SVG = _mark(stroke=2.7, dot=1.75)
 
 
 def favicon(request: HttpRequest) -> HttpResponse:
@@ -91,7 +99,7 @@ def favicon(request: HttpRequest) -> HttpResponse:
 
 
 def favicon_full(request: HttpRequest) -> HttpResponse:
-    """The full mark, text lines included — for app icons, avatars and social cards."""
+    """The mark at its display weight — for app icons, avatars and social cards."""
     return HttpResponse(FAVICON_SVG, content_type="image/svg+xml")
 
 
