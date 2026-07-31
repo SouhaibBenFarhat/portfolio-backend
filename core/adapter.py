@@ -8,10 +8,32 @@ encrypted (unlike allauth's plaintext `SocialApp` table) while allauth still get
 what it needs. Wired via `settings.SOCIALACCOUNT_ADAPTER`.
 """
 
+from allauth.account.adapter import DefaultAccountAdapter
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
 from allauth.socialaccount.models import SocialApp
 
 from .models import OAuthCredential
+
+# Messages allauth queues immediately before we redirect the browser off this site, to the
+# dashboard SPA at APP_URL (LOGIN_REDIRECT_URL). A separate application cannot render
+# Django's message queue, so these are never shown — they just sit in the session until the
+# visitor happens to open a page here, and then surface long after the fact, next to
+# whatever that page actually says. Not queuing them is the fix; the SPA greets its own
+# visitors.
+_MESSAGES_NOBODY_WILL_SEE = frozenset({"account/messages/logged_in.txt"})
+
+
+class AccountAdapter(DefaultAccountAdapter):
+    """Drops messages that would outlive the page they were meant for.
+
+    Wired via `settings.ACCOUNT_ADAPTER`. Everything else is allauth's default: sign-out
+    still says so, and that one now lands on `/signin`, which does render it.
+    """
+
+    def add_message(self, request, level, message_template=None, *args, **kwargs):
+        if message_template in _MESSAGES_NOBODY_WILL_SEE:
+            return
+        return super().add_message(request, level, message_template, *args, **kwargs)
 
 
 def _social_app(cred: OAuthCredential) -> SocialApp:

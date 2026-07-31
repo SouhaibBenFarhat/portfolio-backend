@@ -147,7 +147,8 @@ main.page.split .page-card { flex: 1 1 26rem; max-width: none; align-self: cente
 
 /* ---- Card notices + foot links ------------------------------------------- */
 .auth-note { margin: 0 0 1.25rem; padding: .75rem .875rem; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); color: var(--text); font-size: .875rem; line-height: 1.45; text-align: center; }
-.msgs { list-style: none; margin: 0 0 1.25rem; padding: .75rem .875rem; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-radius: 8px; font-size: .875rem; }
+/* No bottom margin: .page-card is a flex column with its own 1.25rem gap. */
+.msgs { list-style: none; margin: 0; padding: .75rem .875rem; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border-radius: 8px; font-size: .875rem; }
 .auth-alt { margin: 1.25rem 0 0; text-align: center; font-size: .8125rem; color: var(--muted); line-height: 1.7; }
 .auth-alt a { color: var(--accent); }
 .auth-fine { margin: 1.25rem 0 0; text-align: center; font-size: .75rem; line-height: 1.5; color: var(--muted); }
@@ -211,6 +212,16 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 
 <main class="page {% block page_layout %}{% endblock %}">
   <div class="page-card">
+    {% comment %}
+    Rendered here, in the shell, so EVERY page we serve drains the queue. Left to the allauth
+    layout alone it only drained on an allauth page, and anything queued before a redirect to
+    /signin or to the dashboard SPA sat in the session until the visitor happened to open one
+    — then all of it surfaced at once, long after the fact and contradicting the page it
+    landed on.
+    {% endcomment %}
+    {% if messages %}
+    <ul class="msgs">{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
+    {% endif %}
     {% block page %}{% endblock %}
   </div>
   {% block aside %}{% endblock %}

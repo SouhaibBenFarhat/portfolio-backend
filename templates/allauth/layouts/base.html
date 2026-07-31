@@ -5,6 +5,9 @@ logout, …). Extends the shared site_base.html, so every allauth page gets the 
 footer + theme + card/form styling as the sign-in hub with no repeated markup. Pages fill
 {% block content %}, which this wraps in the themed card; allauth's own defaults may also use
 {% block extra_head %}/{% block extra_style %}, mapped through below.
+
+Django messages are NOT rendered here — site_base.html draws them above the card, so that
+every page we serve drains the queue rather than only the allauth ones.
 {% endcomment %}
 
 {% block head_meta %}{% block extra_head %}{% endblock %}{% endblock %}
@@ -12,9 +15,6 @@ footer + theme + card/form styling as the sign-in hub with no repeated markup. P
 
 {% block page %}
   <div class="auth-card">
-    {% if messages %}
-    <ul class="msgs">{% for message in messages %}<li>{{ message }}</li>{% endfor %}</ul>
-    {% endif %}
     {% block content %}{% endblock %}
   </div>
   <p class="card-foot"><a href="/signin">Back to sign in</a></p>

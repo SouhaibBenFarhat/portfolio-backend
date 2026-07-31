@@ -246,6 +246,10 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 # Feed allauth its apps from the encrypted OAuthCredential model rather than env/plaintext.
 SOCIALACCOUNT_ADAPTER = "core.adapter.SocialAccountAdapter"
+# Drops the "successfully signed in" message, which is queued right before the browser is
+# redirected to APP_URL — a separate app that cannot render Django's message queue, so it
+# would sit in the session and surface later on an unrelated page. See core.adapter.
+ACCOUNT_ADAPTER = "core.adapter.AccountAdapter"
 
 # Password strength for email+password sign-ups (Django's standard validators). There was no
 # reason for these before — social sign-ups set no password — so they're added with this flow.
