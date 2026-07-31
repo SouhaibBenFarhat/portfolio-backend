@@ -452,6 +452,9 @@ def test_signin_page_renders_in_the_landing_design():
     assert "Claim your page" in body
     assert "hirees" in body
     assert "{%" not in body  # every template tag was rendered, none leaked
+    # {# #} is single-line only in Django, so a multi-line one prints as page text. That has
+    # now bitten twice — the social-signup page, and the messages block in site_base.html.
+    assert "{#" not in body
     assert "{% static" not in body
 
 
@@ -735,3 +738,54 @@ def test_logout_redirects_to_the_sign_in_page():
     response = client.post(reverse("account_logout"))
     assert response.status_code == 302
     assert response["Location"] == settings.LOGIN_URL == "/signin"
+
+
+# --- Django messages ------------------------------------------------------
+# The reported symptom: /accounts/logout/ showed "You have signed out." and "Successfully
+# signed in as SouhaibBenFarhat." stacked together, above a form asking whether you were
+# sure you wanted to sign out. Both were stale. Only the allauth layout drew the queue, so
+# messages queued before a redirect to /signin or to the dashboard SPA were never drained —
+# they waited in the session for the next allauth page and then all arrived at once.
+
+
+def test_signing_out_says_so_on_the_page_it_lands_on():
+    """The sign-out confirmation is drained by /signin, where it belongs, rather than
+    waiting in the session for whatever page the visitor opens next."""
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="msg1", password="p")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(user)
+    client.post(reverse("account_logout"))
+
+    body = client.get("/signin").content.decode()
+    assert "You have signed out." in body
+    assert 'class="msgs"' in body
+
+
+def test_signing_out_leaves_nothing_behind_for_the_next_page():
+    """Draining is the whole point: a message must not reappear on a later page. This is the
+    screenshot bug — a sign-out notice surfacing above 'Are you sure you want to sign out?'"""
+    from django.contrib.auth.models import User
+
+    user = User.objects.create_user(username="msg2", password="p")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(user)
+    client.post(reverse("account_logout"))
+    client.get("/signin")  # drains it here
+
+    assert "You have signed out." not in client.get(reverse("account_logout")).content.decode()
+
+
+def test_signing_in_queues_no_message_the_dashboard_cannot_show():
+    """Sign-in redirects to the SPA at APP_URL, which cannot render Django's message queue,
+    so 'Successfully signed in as …' would sit in the session and surface later beside
+    something that contradicts it."""
+    _verified_user("msg3@example.com")  # unverified would bounce to the code page instead
+    client = Client()
+    response = client.post(
+        reverse("account_login"), {"login": "msg3@example.com", "password": _STRONG_PASSWORD}
+    )
+    assert response["Location"] == settings.APP_URL, "must actually have signed in"
+
+    assert "Successfully signed in" not in client.get("/signin").content.decode()
