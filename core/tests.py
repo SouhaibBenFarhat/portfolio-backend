@@ -83,12 +83,27 @@ def test_landing_hero_google_signs_in_when_configured():
     assert 'action="/accounts/google/login/?process=login"' in body
 
 
-def test_favicon_uses_the_small_mark_and_the_full_one_is_available():
-    """The tab renders at 16px, so /favicon.svg serves the variant without text lines."""
+def _stroke_width(svg: str) -> float:
+    """The weight the mark is drawn at, read off the rendered SVG's one stroked group."""
+    return float(re.search(r'stroke-width="([\d.]+)"', svg).group(1))
+
+
+def test_the_tab_mark_is_the_same_letter_carrying_more_weight():
+    """A monogram needs no redrawing at 16px, only more weight.
+
+    The mark this replaced — a CV with a brain badged into it — needed two genuinely
+    different drawings, because its three text lines merged into the badge at tab size. So
+    the old assertion here was that /favicon.svg had *fewer* paths than /favicon-full.svg.
+    A letter has no such problem, so both routes now draw the same thing and the only
+    difference is optical size: heavier strokes and a larger dot for the tab, the way a
+    type family cuts a separate face for small text instead of shrinking the display one.
+    """
     small = Client().get("/favicon.svg").content.decode()
     full = Client().get("/favicon-full.svg").content.decode()
-    assert small.count("<path") < full.count("<path")
-    assert "linearGradient" not in small  # the old gradient monogram is gone
+
+    assert small.count("<path") == full.count("<path")  # one drawing, not two
+    assert _stroke_width(small) > _stroke_width(full)
+    assert "linearGradient" not in small  # no gradients anywhere in this design system
     assert "#1f6f78" in small  # the site's petrol accent
 
 
