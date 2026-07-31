@@ -289,12 +289,16 @@ header {
    and the graph (sources → assistant → keyboard/mouse) full-width underneath — only the
    screen moved up; a cable keeps it connected to the desk below. */
 @media (min-width: 960px) {
-  /* Left column: the flow top-to-bottom (graph → computer); right column: the copy. */
-  .hero-2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.9fr); column-gap: 3rem; align-items: start; }
-  .hero-copy { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  /* Left column: the copy; right column: the flow top-to-bottom (graph → computer).
+     The copy leads because the eye starts top-left, and the first thing worth landing on is
+     the sentence naming what this is — not a diagram of how it works, which answers a
+     question nobody has asked yet. This is also the order the stacked layout already uses
+     below 960px, so the two now agree instead of mirroring each other. */
+  .hero-2 { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); column-gap: 3rem; align-items: start; }
+  .hero-copy { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
   /* Placement only — the column layout itself is on .flow, so it holds at every width. */
-  .hero-2 .flow { grid-column: 1; grid-row: 1; margin-top: 0; }
-  .stage-screen { grid-column: 1; grid-row: 2; margin-top: 3.25rem; }
+  .hero-2 .flow { grid-column: 2; grid-row: 1; margin-top: 0; }
+  .stage-screen { grid-column: 2; grid-row: 2; margin-top: 3.25rem; }
 }
 .stage-screen { display: flex; flex-direction: column; align-items: center; }
 .stage-screen .lid { width: 100%; }
@@ -303,16 +307,21 @@ header {
    own margin inside the grid rule above, which is why this only applies below it. */
 @media (max-width: 59.99rem) { .stage-screen { margin-top: 1.75rem; } }
 
-/* Vertical graph: square source tiles → a merge → the agent, then the connector to the screen. */
+/* Vertical graph: square source tiles → a merge → the agent, then the connector to the screen.
+   Deliberately compact. The copy column is centred against this whole left column, so every
+   pixel of graph height pushes the headline and the sign-in button down by half that — and at
+   its earlier size the button landed at 797px, below the fold on a 768px-tall laptop. The
+   graph answers "where does the data come from", which is a question a visitor only asks
+   after they've decided they want the thing; it must not cost the page its call to action. */
 .sources-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; width: 100%; }
-.sources-row .node { flex-direction: column; align-items: center; justify-content: center; text-align: center; aspect-ratio: 1 / 1; max-width: 5.25rem; margin-inline: auto; gap: .375rem; padding: .4375rem; }
-.sources-row .node-ico { width: 1.75rem; height: 1.75rem; }
-.sources-row .node-ico svg { width: 1.0625rem; height: 1.0625rem; }
+.sources-row .node { flex-direction: column; align-items: center; justify-content: center; text-align: center; aspect-ratio: 1 / 1; max-width: 4.25rem; margin-inline: auto; gap: .3125rem; padding: .375rem; }
+.sources-row .node-ico { width: 1.5rem; height: 1.5rem; }
+.sources-row .node-ico svg { width: .9375rem; height: .9375rem; }
 /* GitHub is a recognised brand and a trust signal — give its real mark more presence. */
-.sources-row .node-ico.gh { width: 2rem; height: 2rem; }
-.sources-row .node-ico.gh svg { width: 1.5rem; height: 1.5rem; }
+.sources-row .node-ico.gh { width: 1.75rem; height: 1.75rem; }
+.sources-row .node-ico.gh svg { width: 1.25rem; height: 1.25rem; }
 .sources-row .node-t { font-size: .625rem; line-height: 1.2; }
-.merge { position: relative; width: 100%; height: 4rem; }
+.merge { position: relative; width: 100%; height: 2.25rem; }
 .merge svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .merge path { vector-effect: non-scaling-stroke; }
 .merge .h-base { stroke: color-mix(in srgb, var(--accent) 40%, var(--line)); }
@@ -602,7 +611,7 @@ h1 em { font-style: normal; color: var(--accent); }
   border-radius: 16px;
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   box-shadow: var(--shadow-md);
-  padding: 1.375rem 1rem;
+  padding: 1rem;
   text-align: center;
 }
 @media (min-width: 960px) { .agent { grid-column: 2; grid-row: 1; } }
@@ -611,7 +620,7 @@ h1 em { font-style: normal; color: var(--accent); }
    centre; PCB traces fan out to vias; accent energy pulses run the corner traces (the same
    dash trick as the merge lines) so it reads as live compute. Palette stays the site's —
    a hairline board and the one petrol accent, no glow or gradient. */
-.agent-chip { width: 8rem; height: 8rem; margin: 0 auto .75rem; }
+.agent-chip { width: 4.25rem; height: 4.25rem; margin: 0 auto .5rem; }
 .agent-chip svg { width: 100%; height: 100%; display: block; overflow: visible; }
 
 .chip-trace { stroke: color-mix(in srgb, var(--accent) 30%, var(--line)); }
@@ -657,7 +666,7 @@ h1 em { font-style: normal; color: var(--accent); }
    fed by a short live connector dropping in from the AI node above. This is the "hosted on
    our domain" payoff — the graph resolves to an address, and the screen below shows it. */
 .flow .drop {
-  display: block; width: 2.5px; height: 1.75rem; margin: 0; flex: none;
+  display: block; width: 2.5px; height: 1.125rem; margin: 0; flex: none;
   position: relative; overflow: hidden; border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
@@ -1417,7 +1426,12 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
           <path d="M20.5 14.8A8.6 8.6 0 019.2 3.5a8.6 8.6 0 1011.3 11.3z"/>
         </svg>
       </button>
-      <a href="/signin" class="btn">Create your page</a>
+      {% comment %}
+      New visitors go to sign-UP, not /signin. /signin's email form says "Sign in", which is
+      the wrong action for someone who has just clicked "Create your page"; the sign-up page
+      carries the same provider buttons plus an email form that creates the account.
+      {% endcomment %}
+      <a href="{% url 'account_signup' %}" class="btn">Create your page</a>
     </div>
   </div>
 </header>
@@ -1830,7 +1844,8 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
         <div class="step-n">1</div>
         <div class="step-t">Feed it your CV and sources</div>
         <div class="step-d">
-          Upload your CV, then connect GitHub, LinkedIn and any documents. It reads all of
+          Upload your CV, add your GitHub username, and drop in anything else — a cover
+          letter, a certificate, a reference. It reads all of
           it — so every answer comes from your own material, never something it made up.
         </div>
       </div>
@@ -1848,6 +1863,7 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
         <div class="step-d">
           You get <b>you.hirees.me</b>. Recruiters ask; it answers from everything above,
           in your own words, day or night — no PDF, no waiting on you to reply.
+          They just open the link — no account, nothing to install.
         </div>
       </div>
     </div>
@@ -1937,13 +1953,13 @@ footer { border-top: 1px solid var(--line); padding: 2rem 0; }
 <hr class="rule">
 <section class="closing" id="start">
   <div class="wrap">
-    <h2 class="reveal">Next time, be in the room.</h2>
+    <h2 class="reveal">Upload your CV. Get your page.</h2>
     <p class="lede reveal">
       Upload the CV you already have. You'll have a page, and something on it that
       answers for you, in about a minute.
     </p>
     <div class="hero-actions reveal">
-      <a href="/signin" class="btn-solid">Claim your page</a>
+      <a href="{% url 'account_signup' %}" class="btn-solid">Claim your page</a>
     </div>
   </div>
 </section>
