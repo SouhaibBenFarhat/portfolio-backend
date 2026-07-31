@@ -29,8 +29,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # No `name:` on purpose. GitHub names the check run after the job's `name` when it has one and
+  # falls back to the job id otherwise, and the required-status-check setting matches that string
+  # exactly — so a display name here would mean requiring "Title follows Conventional Commits"
+  # while the obvious guess, `pr-title`, silently matched nothing and left every pull request
+  # waiting on a status that never arrives. The `test` job in ci.yml is bare for the same reason.
   pr-title:
-    name: Title follows Conventional Commits
     runs-on: ubuntu-latest
     steps:
       - uses: amannn/action-semantic-pull-request@v6
