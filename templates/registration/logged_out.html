@@ -1,0 +1,48 @@
+{% extends 'unfold/layouts/unauthenticated.html' %}
+
+{% comment %}
+Overrides unfold/templates/registration/logged_out.html — the page you land on after leaving
+the admin.
+
+Unfold sets the message loose on the page: a heading, a paragraph and a button floating on a
+plain white background, with nothing holding them together. Everywhere else in this admin a
+self-contained block of content sits on a surface card, and this page is the most self-
+contained block there is — one sentence and one way out.
+
+The card is the same plane as every other card here (--pf-surface on --pf-page, --pf-line
+border, card shadow), so it needs no colours of its own. The layout's own `bg-white` is
+overridden in the stylesheet: white is the SURFACE colour, so a white card on a white page is
+no card at all.
+
+The copy is ours, not Django's. Its stock second line — "Thanks for spending some quality
+time with the web site today." — is a pleasantry that tells you nothing. The line kept here
+does a job: it confirms what happened and says what the button will do, so the page reads
+without having to hover the only control on it.
+
+Kept from Unfold: the layout and the button component, so the accent follows a retheme.
+{% endcomment %}
+
+{% load i18n unfold %}
+
+{% block title %}
+    {{ title }} | {{ site_title }}
+{% endblock %}
+
+{% block content %}
+    <div class="pf-auth-card">
+        <div class="pf-auth-logo">{% include "partials/_logo.html" %}</div>
+
+        <h1 class="font-semibold mb-2 text-font-important-light text-xl tracking-tight dark:text-font-important-dark">
+            {% trans "Signed out" %}
+        </h1>
+
+        <p class="leading-relaxed mb-8">
+            {% trans "You have been signed out of the admin. Log in again to get back to the dashboard." %}
+        </p>
+
+        {% url "admin:index" as login_url %}
+        {% component "unfold/components/button.html" with href=login_url variant="primary" class="w-full" %}
+            {% trans "Log in again" %} <span class="material-symbols-outlined relative right-0 transition-all group-hover:-right-1 text-sm">arrow_forward</span>
+        {% endcomponent %}
+    </div>
+{% endblock %}
