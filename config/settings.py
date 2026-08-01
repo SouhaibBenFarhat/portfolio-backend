@@ -13,6 +13,7 @@ from pathlib import Path
 
 import dj_database_url
 from django.templatetags.static import static
+from django.urls import reverse_lazy
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -423,6 +424,122 @@ UNFOLD = {
             "important-light": "var(--color-base-900)",
             "important-dark": "var(--color-base-100)",
         },
+    },
+    # --- Sidebar --------------------------------------------------------------
+    # Without this, Unfold lists every registered model grouped by Django app, alphabetically.
+    # That produced a sidebar nobody could read: "users", "email addresses", "social accounts"
+    # and "profiles" sat next to each other with nothing saying how they differ, "social
+    # application tokens" and "sites" appeared despite never being touched, and the two things
+    # an operator actually opens most — documents and facts — were buried under "chat".
+    #
+    # So the navigation is written out by hand, grouped by the job you came to do rather than
+    # by which app happens to define the model, and the labels say what the row IS:
+    #
+    #   Pages       = core.Profile        one per tenant: their handle, and whether it's live
+    #   Accounts    = auth.User           the sign-in identity — one person can have several
+    #                                     email addresses and several linked providers
+    #   Email addresses / Linked providers = allauth's records hanging off an account
+    #
+    # THE TRADE-OFF: a hand-written list does not grow by itself. A newly registered model is
+    # invisible here until it's added below — which is why `show_all_applications` stays on,
+    # so there is always a complete list one click away rather than a model that seems to have
+    # vanished. Deliberately left out of the groups: auth.Group (no roles here — the only
+    # accounts are the owner's), sites.Site (allauth requires SITE_ID but nothing edits it),
+    # and socialaccount.SocialToken (raw OAuth tokens; reading them helps nobody).
+    #
+    # No per-item `permission` callbacks: every item is visible to any staff account, and
+    # Django still enforces the real check on the page itself, so a link they can't use is a
+    # 403 rather than a leak. Worth revisiting the day staff means more than one person.
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,  # the escape hatch for anything not listed below
+        "navigation": [
+            {
+                "title": "Tenants",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Pages",
+                        "icon": "public",
+                        "link": reverse_lazy("admin:core_profile_changelist"),
+                    },
+                    {
+                        "title": "Accounts",
+                        "icon": "person",
+                        "link": reverse_lazy("admin:auth_user_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "What the assistant knows",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Documents",
+                        "icon": "description",
+                        "link": reverse_lazy("admin:chat_document_changelist"),
+                    },
+                    {
+                        "title": "Facts",
+                        "icon": "help",
+                        "link": reverse_lazy("admin:chat_fact_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Chat",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Conversations",
+                        "icon": "forum",
+                        "link": reverse_lazy("admin:chat_conversation_changelist"),
+                    },
+                    {
+                        "title": "Models",
+                        "icon": "smart_toy",
+                        "link": reverse_lazy("admin:chat_chatmodel_changelist"),
+                    },
+                    {
+                        "title": "Token usage",
+                        "icon": "monitoring",
+                        "link": reverse_lazy("admin:chat_tokenusage_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Sign-in",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Social login apps",
+                        "icon": "login",
+                        "link": reverse_lazy("admin:core_oauthcredential_changelist"),
+                    },
+                    {
+                        "title": "Email addresses",
+                        "icon": "mail",
+                        "link": reverse_lazy("admin:account_emailaddress_changelist"),
+                    },
+                    {
+                        "title": "Linked providers",
+                        "icon": "link",
+                        "link": reverse_lazy("admin:socialaccount_socialaccount_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Keys",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "API credentials",
+                        "icon": "vpn_key",
+                        "link": reverse_lazy("admin:chat_llmcredential_changelist"),
+                    },
+                ],
+            },
+        ],
     },
     # Elevation bridge: Unfold is flat (page, cards, and fields share backgrounds);
     # this sheet recreates the site's page → surface → field plane system. It only

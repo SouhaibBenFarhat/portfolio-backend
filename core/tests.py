@@ -938,3 +938,37 @@ def test_the_admin_is_branded_as_the_product_not_the_repository():
     body = Client().get("/admin/login/").content.decode()
     assert "Hirees" in body
     assert "portfolio-backend" not in body
+
+
+@pytest.mark.django_db
+def test_every_sidebar_link_resolves():
+    """The sidebar is hand-written, so a renamed or unregistered model breaks it — and
+    because it renders on every admin page, that breaks the whole admin, not one link.
+    reverse_lazy defers the failure to render time, so force each one here instead."""
+    from django.conf import settings
+
+    groups = settings.UNFOLD["SIDEBAR"]["navigation"]
+    links = [str(item["link"]) for group in groups for item in group["items"]]
+    assert len(links) == 11, "a group changed — check the sidebar still covers what it should"
+    assert all(link.startswith("/admin/") for link in links)
+
+
+@pytest.mark.django_db
+def test_the_sidebar_covers_every_model_an_operator_edits():
+    """Anything registered but absent from the sidebar is only reachable through 'All
+    applications'. That's fine for plumbing (Sites, Groups, OAuth tokens) and wrong for
+    anything else, so this pins which models were deliberately left out."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    missing = {
+        f"{m._meta.app_label}.{m._meta.model_name}"
+        for m in django_admin.site._registry
+        if f"/admin/{m._meta.app_label}/{m._meta.model_name}/" not in listed
+    }
+    assert missing == {"auth.group", "sites.site", "socialaccount.socialtoken"}
