@@ -405,6 +405,9 @@ UNFOLD = {
     "SITE_TITLE": "Hirees",
     "SITE_HEADER": "Hirees",
     "SITE_ICON": "/favicon.svg",  # the service's own favicon route (core.views.favicon)
+    # Unfold's own sign-in form plus placeholder text — see core/forms.py for why it
+    # subclasses Unfold's rather than Django's.
+    "LOGIN": {"form": "core.forms.AdminLoginForm"},
     # Match the portfolio site's design tokens (src/styles/global.css in the frontend
     # repo) so the admin reads as part of the same product. The site's two accent
     # values sit on the shades Unfold actually renders: primary-600 is the light-mode

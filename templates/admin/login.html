@@ -1,0 +1,106 @@
+{% extends 'unfold/layouts/unauthenticated.html' %}
+
+{% comment %}
+Overrides unfold/templates/admin/login.html.
+
+Same change as registration/logged_out.html, and for the same reason: Unfold leaves the form
+loose on a white page, while everything else in this admin puts a self-contained block of
+content on a surface card. A sign-in form is the most self-contained block there is.
+
+Everything the page is FOR goes inside the card — the title, any error messages, both fields
+and both buttons. Errors especially: a validation message floating outside the card would
+read as belonging to the page rather than to the form that produced it.
+
+The heading and the line under it are written here rather than through
+unfold/helpers/unauthenticated_title.html. That include renders a title and a subtitle with a
+rule beneath, and leaves nowhere for a sentence to sit that still belongs to the heading — it
+would land under the rule, next to the form instead of with the title. Writing the two lines
+directly also makes this card and the signed-out card the same shape: mark, heading, one line,
+action. One fewer Unfold include to depend on, as a side effect.
+
+The mark is the same partial the marketing site and every allauth page include, so there is
+one drawing of it rather than a second that drifts. It needs --accent / --on-accent, which are
+site tokens the admin does not emit; the stylesheet maps them onto the rail's colours for this
+one element, so the mark here is the mark on the rail you see once you are in.
+
+The inputs are not styled here. `.pf-auth-card` is named alongside `#main` in the stylesheet's
+field rules, so these fields get the same inset wells and the same accent focus halo as every
+field in the admin, from one rule rather than a copy that can drift.
+
+Kept from Unfold: the layout, the message includes, `unfold/helpers/field.html`
+(which renders the label, widget and errors together), and the button component — so the
+accent still follows a retheme. The form action, method and id are unchanged; `login-form` is
+referenced by Unfold's own scripts.
+{% endcomment %}
+
+{% load i18n unfold %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    {{ form.media }}
+{% endblock %}
+
+{% block title %}
+    {{ title }} | {{ site_title }}
+{% endblock %}
+
+{% block content %}
+    <div class="pf-auth-card">
+        <div class="pf-auth-logo">{% include "partials/_logo.html" %}</div>
+
+        {% blocktranslate asvar heading with site=site_title|default:_('the admin') %}Sign in to {{ site }}{% endblocktranslate %}
+        <h1 class="font-semibold mb-2 text-font-important-light text-xl tracking-tight dark:text-font-important-dark">
+            {{ heading }}
+        </h1>
+
+        <p class="leading-relaxed mb-8">
+            {% trans "Use your admin account to manage content, users and settings." %}
+        </p>
+
+        {% include "unfold/helpers/messages.html" %}
+
+        {% if form.errors or form.non_field_errors %}
+            <div class="flex flex-col gap-4 mb-8 *:mb-0">
+                {% include "unfold/helpers/messages/errornote.html" with errors=form.errors %}
+
+                {% include "unfold/helpers/messages/error.html" with errors=form.non_field_errors %}
+
+                {% if user.is_authenticated %}
+                    {% blocktranslate trimmed asvar message %}
+                        You are authenticated as {{ username }}, but are not authorized to
+                        access this page. Would you like to login to a different account?
+                    {% endblocktranslate %}
+
+                    {% include "unfold/helpers/messages/error.html" with error=message %}
+                {% endif %}
+            </div>
+        {% endif %}
+
+        {% block login_before %}{% endblock %}
+
+        <form action="{{ app_path }}" method="post" id="login-form">
+            {% csrf_token %}
+
+            {% include "unfold/helpers/field.html" with field=form.username %}
+
+            {% include "unfold/helpers/field.html" with field=form.password %}
+
+            <div class="flex flex-col gap-3 mt-6">
+                {% component "unfold/components/button.html" with submit=1 variant="primary" class="submit-row w-full" %}
+                    {% translate 'Log in' %} <span class="material-symbols-outlined relative right-0 transition-all group-hover:-right-1 text-sm">arrow_forward</span>
+                {% endcomponent %}
+
+                {% url 'admin_password_reset' as password_reset_url %}
+                {% url 'admin:admin_password_reset' as unfold_password_reset_url %}
+
+                {% if password_reset_url or unfold_password_reset_url %}
+                    {% component "unfold/components/button.html" with href=password_reset_url|default:unfold_password_reset_url variant="secondary" class="password-reset-link w-full" %}
+                        {% translate 'Forgotten your password or username?' %}
+                    {% endcomponent %}
+                {% endif %}
+            </div>
+        </form>
+
+        {% block login_after %}{% endblock %}
+    </div>
+{% endblock %}

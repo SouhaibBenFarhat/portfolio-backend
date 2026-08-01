@@ -64,6 +64,14 @@ def test_every_admin_page_an_operator_opens_still_renders():
         if response.status_code != 200:
             broken[path] = response.status_code
 
+    # The two unauthenticated pages, which use a different layout and so a different set of
+    # Unfold includes. Signed out for the login page, since a signed-in visitor is redirected
+    # away from it, and last for logout because it ends the session.
+    if Client().get("/admin/login/").status_code != 200:
+        broken["/admin/login/"] = "did not render for a signed-out visitor"
+    if client.post("/admin/logout/").status_code != 200:
+        broken["/admin/logout/"] = "did not render (it is a POST since Django 5)"
+
     assert not broken, f"admin pages no longer render: {broken}"
 
 
@@ -169,7 +177,16 @@ def test_every_pf_class_the_stylesheet_styles_is_actually_rendered():
     out of date: add a `.pf-` rule and this test starts requiring it to appear.
     """
     client = _operator("markers")
-    html = client.get("/admin/").content.decode() + client.get("/admin/auth/user/").content.decode()
+    html = "".join(
+        [
+            client.get("/admin/").content.decode(),
+            client.get("/admin/auth/user/").content.decode(),
+            # Signed out: a signed-in visitor is redirected away from the login page.
+            Client().get("/admin/login/").content.decode(),
+            # Last — this ends the session. A POST because Django 5 refuses logout by GET.
+            client.post("/admin/logout/").content.decode(),
+        ]
+    )
 
     rendered = set()
     for attr in re.finditer(r'class="([^"]*)"', html):
