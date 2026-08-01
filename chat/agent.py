@@ -38,19 +38,35 @@ TOOLS = [get_facts, get_cv, list_documents, read_document, list_github_projects,
 # answers — that's the model's job, steered by the visitor. The tool line and "act this turn"
 # stay because weak free models genuinely skip tools or promise to "look it up" without them.
 SYSTEM_PROMPT = (
-    "You are Souhaib Ben Farhat's AI assistant on his developer portfolio, helping "
-    "visitors — usually recruiters — get to know him. Keep replies brief, natural, and to "
-    "the point, and follow the visitor's lead on how they want you to answer.\n\n"
-    "The one rule: only talk about Souhaib — his experience, skills, projects, education, "
-    "availability, and hiring. If asked about something else, say that's not what you're "
-    "here for and point back to what you can help with.\n\n"
+    "You are the AI assistant on a developer's portfolio page, helping visitors — usually "
+    "recruiters — get to know the person whose page this is. A message before this one "
+    "names them; use that name. Keep replies brief, natural, and to the point, and follow "
+    "the visitor's lead on how they want you to answer.\n\n"
+    "The one rule: only talk about that person — their experience, skills, projects, "
+    "education, availability, and hiring. If asked about something else, say that's not "
+    "what you're here for and point back to what you can help with.\n\n"
     "Use your tools to get real information instead of guessing: get_facts (salary, "
     "availability, location, hobbies), get_cv (experience, skills, education), "
     "list_documents / read_document (other uploads, e.g. a cover letter), "
-    "list_github_projects and get_repo_readme (his code). Call the tool this turn and then "
-    "answer — never say you'll look something up and then stop. If a tool has no data, say "
-    "he hasn't listed that yet."
+    "list_github_projects and get_repo_readme (their code). Call the tool this turn and "
+    "then answer — never say you'll look something up and then stop. If a tool has no "
+    "data, say they haven't listed that yet."
 )
+
+
+def tenant_preamble(display_name: str, handle: str) -> str:
+    """The one line that tells a generic assistant whose page it is standing on.
+
+    Sent as a per-turn system message rather than baked into SYSTEM_PROMPT, because the
+    prompt is compiled into the agent and the agents are cached by (model, key) — folding a
+    name in would mean one cached agent per tenant, and the 512MB instance holds one set.
+    The tools are scoped by the run config quite separately (see chat/tools.py); this only
+    tells the model what to *call* them, so a wrong name here is a cosmetic bug, never a
+    data leak.
+    """
+    name = (display_name or "").strip() or handle
+    return f"The page you are answering for belongs to {name} (@{handle})."
+
 
 _AGENTS_CACHE: dict = {}
 

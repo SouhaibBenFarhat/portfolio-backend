@@ -7,6 +7,7 @@ remembers context across messages and across server restarts.
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 
 from .fields import EncryptedTextField
@@ -14,6 +15,16 @@ from .fields import EncryptedTextField
 
 class Conversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # WHOSE PAGE this conversation is about — the tenant a recruiter is asking about, not
+    # the person typing. Visitors stay anonymous and never sign in; the owner is resolved
+    # from the request (subdomain or /u/<handle>) and decides which facts and documents the
+    # agent may read. Not nullable and carrying no default, on purpose: a conversation that
+    # belonged to nobody would be a thread the agent could answer out of any tenant's data.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="conversations",
+    )
     # How many tokens the model read on this thread's last turn — the whole prompt
     # (persona + history + tool results), which already includes every earlier reply.
     # It's the thread's context size, not a running total, so each turn overwrites it.
@@ -62,8 +73,16 @@ class Message(models.Model):
 
 
 class Fact(models.Model):
-    """A short question/answer the assistant can cite (edited in the admin)."""
+    """A short question/answer the assistant can cite (edited in the admin).
 
+    Owned by a tenant: `get_facts` only ever sees the facts of the page being asked about.
+    """
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="facts",
+    )
     category = models.CharField(
         max_length=50,
         help_text='Group label, e.g. "Compensation", "Availability", "Personal".',
@@ -93,7 +112,15 @@ class Document(models.Model):
     (the same reason the app uses Postgres over SQLite).
     """
 
-    slug = models.SlugField(unique=True, help_text='Stable id, e.g. "cv" or "bio".')
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+    # Unique PER OWNER, not globally (see Meta.constraints). It was globally unique when
+    # this was one person's CV; the second tenant to upload one would have collided on
+    # slug="cv" and been unable to save.
+    slug = models.SlugField(help_text='Stable id, e.g. "cv" or "bio".')
     title = models.CharField(max_length=200)
     content = models.TextField(
         help_text="What the assistant reads. Filled from an uploaded file's extracted "
@@ -108,6 +135,9 @@ class Document(models.Model):
 
     class Meta:
         ordering = ["slug"]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "slug"], name="unique_document_per_owner")
+        ]
 
     def __str__(self):
         return self.title

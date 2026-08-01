@@ -36,13 +36,20 @@ and manage it from a React dashboard. Recruiters chat with any user's hosted pag
 - **No tenancy yet** — existing content stays global. Tests cover both flows; CI stays green (the
   only DRF addition was `/api/me`, already in `openapi.yaml`).
 
-### Phase 2 — Tenancy / ownership (backend, the real foundation)
-- `Profile` (1:1 `User`) with a unique **handle** (their public-page slug).
-- Add `owner` FK to `Document`, `Fact`, `Conversation`; data migration backfills Souhaib as
-  tenant #1 and assigns existing rows to him.
-- Scope the agent tools, `/chat/stream`, restore, and rating endpoints to a **tenant**
-  resolved from the request (subdomain or `/u/<handle>`). LLM keys + `ChatModel` stay global.
-- Reserve `www`, `app`, `api`, `admin`, `mail`, `status`, `docs` as non-claimable handles.
+### Phase 2 — Tenancy / ownership (backend, the real foundation) — DONE
+Full detail in `docs/tenancy.md`.
+- `Profile` (1:1 `User`) with a unique **handle**, plus `github_username` and `is_published`.
+- `owner` FK on `Document`, `Fact`, `Conversation`, **mandatory**; `core/0005` backfills the
+  earliest superuser as tenant #1 and `chat/0014` then makes the columns `NOT NULL`.
+  `Document.slug` is unique per owner instead of globally.
+- The agent tools, `/chat/stream`, restore, delete and rating are all scoped to a tenant
+  resolved in `core/tenancy.py` (subdomain → explicit handle → `FALLBACK_TENANT_HANDLE`).
+  The owner reaches the tools through the **LangGraph run config**, which LangChain keeps out
+  of the schema the model sees — so the model can't name a tenant. LLM keys + `ChatModel`
+  stayed global as planned.
+- `RESERVED_HANDLES` blocks the platform names, and is re-checked at resolution time.
+- Not done here, and deliberately: `/u/<handle>` path resolution (only the subdomain and an
+  explicit handle are implemented), and per-tenant rate limits — those belong with Phase 5.
 
 ### Phase 3 — Public tenant pages
 - Resolve tenant → load *their* CV/facts into the existing chat widget; render the hosted page.

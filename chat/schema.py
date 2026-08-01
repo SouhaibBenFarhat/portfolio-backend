@@ -27,7 +27,18 @@ _REQUEST_SCHEMA = {
             "type": "string",
             "format": "uuid",
             "nullable": True,
-            "description": "Continue an existing thread; omit to start a new one.",
+            "description": "Continue an existing thread; omit to start a new one. A thread "
+            "belongs to the page it was started on — an id from another page reads as "
+            "unknown and a new thread begins.",
+        },
+        "handle": {
+            "type": "string",
+            "nullable": True,
+            "description": "Whose page to answer as, for callers reaching the API without "
+            "a tenant subdomain (local development, or a preview). Ignored when the request "
+            "already arrives on a tenant host such as souhaib.hirees.me — the host wins, so "
+            "a visitor on one page cannot ask about another. Omit it and the request falls "
+            "back to the instance's default tenant.",
         },
     },
 }
@@ -171,6 +182,10 @@ _CHAT_STREAM_PATH = {
                 },
             },
             "400": {"description": "Missing/too-long message, or an invalid JSON body."},
+            "404": {
+                "description": "No such page — the request named a tenant that doesn't "
+                "exist, or whose page isn't published."
+            },
             "403": {
                 "description": "The conversation spent its context budget. Start a new "
                 "chat; the body carries the final `usage` figures."

@@ -21,6 +21,35 @@ from langchain_core.messages import AIMessage
 
 from chat.agent import build_agent
 
+
+def _tenant(handle: str = "", **profile_fields):
+    """A signed-up tenant with a published page, and the user every owned row hangs off.
+
+    Tests have to create this explicitly — there is no fixture and no autouse magic — for
+    the same reason a brand-new deployment has no tenants: `core/0005_backfill_tenant_one`
+    only assigns rows to an account that already exists, and a fresh database has none. A
+    chat request that resolves no tenant is a 404, and that is correct: an instance nobody
+    has signed up to has no pages to ask about.
+
+    Defaults to `FALLBACK_TENANT_HANDLE`, which is the handle a request naming no tenant
+    lands on — so a test that just wants the stream to work calls `_tenant()` and stops
+    thinking about it. Pass a handle to set up a second tenant and prove the two are
+    actually separated.
+    """
+    from django.contrib.auth import get_user_model
+
+    from core.models import Profile
+
+    handle = handle or settings.FALLBACK_TENANT_HANDLE
+    user, _ = get_user_model().objects.get_or_create(
+        username=f"tenant-{handle}", defaults={"email": f"{handle}@example.com"}
+    )
+    Profile.objects.get_or_create(
+        user=user, defaults={"handle": handle, "is_published": True, **profile_fields}
+    )
+    return user
+
+
 # --- Phase 0: infrastructure ----------------------------------------------
 
 
@@ -80,7 +109,7 @@ class _RecordingAgent:
         self._reply = reply
         self._model = model
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         self.seen.append(payload["messages"])
         yield _model_stream_event(self._reply, self._model)
 
@@ -88,7 +117,7 @@ class _RecordingAgent:
 class _ToolEventAgent:
     """Stand-in that emits a tool-start/tool-end pair then a token."""
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         yield {"event": "on_tool_start", "name": "get_facts", "data": {}}
         yield {"event": "on_tool_end", "name": "get_facts", "data": {}}
         yield _model_stream_event("Here you go")
@@ -97,7 +126,7 @@ class _ToolEventAgent:
 class _FailingAgent:
     """Stand-in whose stream raises immediately (simulates a quota/rate limit)."""
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         raise RuntimeError("rate limit exceeded")
         yield  # unreachable; makes this an async generator
 
@@ -107,7 +136,7 @@ class _StreamsThenFailsAgent:
     that up", calls a tool, and errors on the step after it, once text has already shown.
     This is the case whose error used to be swallowed."""
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         yield _model_stream_event("Let me look that up. ")
         raise RuntimeError("provider rate limit hit mid-turn")
 
@@ -115,7 +144,7 @@ class _StreamsThenFailsAgent:
 class _FinalOnlyAgent:
     """Stand-in that emits a tool then a final message, but streams no tokens."""
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         yield {"event": "on_tool_start", "name": "get_facts", "data": {}}
         yield {"event": "on_tool_end", "name": "get_facts", "data": {}}
         yield {
@@ -128,7 +157,7 @@ class _FinalOnlyAgent:
 class _EmptyAgent:
     """Stand-in that produces nothing at all (an empty model response)."""
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         return
         yield  # unreachable; makes this an async generator
 
@@ -160,7 +189,7 @@ class _UsageAgent:
             "metadata": {"ls_model_name": self._model},
         }
 
-    async def astream_events(self, payload, version=None):
+    async def astream_events(self, payload, version=None, config=None):
         yield _model_stream_event("Hi")
         yield self._end(120)  # first call: system prompt + history
         yield self._end(450)  # second call: the above plus the tool's result
@@ -200,6 +229,7 @@ def _conversation_id_from(body: str) -> str:
 @pytest.mark.django_db(transaction=True)
 def test_chat_stream_streams_tokens_via_langgraph():
     """A real LangGraph agent (with a fake model) streams SSE token frames."""
+    _tenant()
 
     async def _run():
         agent = build_agent(model=_fake_model("Hello recruiter"), tools=[])
@@ -229,6 +259,8 @@ def test_chat_stream_rejects_non_post():
 
 @pytest.mark.django_db(transaction=True)
 def test_chat_stream_requires_a_message():
+    _tenant()
+
     async def _run():
         return await AsyncClient().post(
             "/chat/stream", data=json.dumps({}), content_type="application/json"
@@ -242,6 +274,8 @@ def test_chat_stream_requires_a_message():
 
 @pytest.mark.django_db(transaction=True)
 def test_messages_are_persisted():
+    _tenant()
+
     async def _run():
         from chat.models import Message
 
@@ -260,6 +294,7 @@ def test_messages_are_persisted():
 @pytest.mark.django_db(transaction=True)
 def test_conversation_history_is_passed_to_the_agent():
     """A second message on the same conversation includes the first exchange."""
+    _tenant()
     recording = _RecordingAgent(reply="noted")
 
     async def _run():
@@ -281,18 +316,20 @@ def test_conversation_history_is_passed_to_the_agent():
         return recording.seen
 
     seen = asyncio.run(_run())
-    contents = [m["content"] for m in seen[1]]
+    # Skip the system line naming the tenant — the history is what follows it.
+    contents = [m["content"] for m in seen[1] if m["role"] != "system"]
     assert contents == ["I am Sam", "noted", "what did I say?"]
 
 
 @pytest.mark.django_db(transaction=True)
 def test_conversation_detail_returns_messages_in_order():
     """The restore endpoint returns a conversation's messages, oldest first."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         await Message.objects.acreate(conversation=conv, role="user", content="hi")
         await Message.objects.acreate(conversation=conv, role="assistant", content="hello!")
         res = await AsyncClient().get(f"/chat/conversations/{conv.id}/")
@@ -317,10 +354,12 @@ def test_conversation_detail_404_for_unknown_id():
 
 @pytest.mark.django_db(transaction=True)
 def test_conversation_detail_rejects_unsupported_method():
+    owner = _tenant()
+
     async def _run():
         from chat.models import Conversation
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         return await AsyncClient().post(f"/chat/conversations/{conv.id}/")
 
     assert asyncio.run(_run()).status_code == 405
@@ -329,11 +368,12 @@ def test_conversation_detail_rejects_unsupported_method():
 @pytest.mark.django_db(transaction=True)
 def test_conversation_delete_removes_conversation_and_messages():
     """DELETE removes the conversation and cascade-deletes its messages."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         await Message.objects.acreate(conversation=conv, role="user", content="hi")
         res = await AsyncClient().delete(f"/chat/conversations/{conv.id}/")
         remaining = await Conversation.objects.filter(id=conv.id).acount()
@@ -376,15 +416,16 @@ def test_admin_login_page_loads(client):
 
 @pytest.mark.django_db
 def test_fact_and_document_models_work():
+    owner = _tenant()
     from chat.models import Document, Fact
 
     fact = Fact.objects.create(
-        category="Compensation", question="Salary expectations", answer="Competitive"
+        owner=owner, category="Compensation", question="Salary expectations", answer="Competitive"
     )
     assert str(fact) == "Compensation: Salary expectations"
     assert fact.is_active is True
 
-    doc = Document.objects.create(slug="cv", title="Résumé", content="…")
+    doc = Document.objects.create(owner=owner, slug="cv", title="Résumé", content="…")
     assert str(doc) == "Résumé"
 
 
@@ -394,6 +435,7 @@ def test_fact_and_document_models_work():
 @pytest.mark.django_db(transaction=True)
 def test_stream_emits_tool_step_events():
     """Tool start/end events from the agent become SSE `tool` frames."""
+    _tenant()
 
     async def _run():
         with patch("chat.views.build_agents", return_value=(_ToolEventAgent(),)):
@@ -423,15 +465,20 @@ def test_tool_label_maps_known_names_and_falls_back():
 
 @pytest.mark.django_db(transaction=True)
 def test_get_facts_tool_reads_active_facts():
+    owner = _tenant()
     from chat.models import Fact
     from chat.tools import get_facts
 
     async def _run():
-        await Fact.objects.acreate(category="Personal", question="Hobbies", answer="Chess")
         await Fact.objects.acreate(
-            category="Personal", question="Secret", answer="hidden", is_active=False
+            owner=owner, category="Personal", question="Hobbies", answer="Chess"
         )
-        return await get_facts.ainvoke({"category": ""})
+        await Fact.objects.acreate(
+            owner=owner, category="Personal", question="Secret", answer="hidden", is_active=False
+        )
+        return await get_facts.ainvoke(
+            {"category": ""}, config={"configurable": {"owner_id": owner.pk}}
+        )
 
     result = asyncio.run(_run())
     assert "Hobbies: Chess" in result
@@ -440,18 +487,22 @@ def test_get_facts_tool_reads_active_facts():
 
 @pytest.mark.django_db(transaction=True)
 def test_get_cv_tool_reads_the_cv_document():
+    owner = _tenant()
     from chat.models import Document
     from chat.tools import get_cv
 
     async def _run():
-        await Document.objects.acreate(slug="cv", title="CV", content="10 years of Python")
-        return await get_cv.ainvoke({})
+        await Document.objects.acreate(
+            owner=owner, slug="cv", title="CV", content="10 years of Python"
+        )
+        return await get_cv.ainvoke({}, config={"configurable": {"owner_id": owner.pk}})
 
     assert "10 years of Python" in asyncio.run(_run())
 
 
 @pytest.mark.django_db(transaction=True)
 def test_list_github_projects_tool_formats_repos():
+    owner = _tenant(github_username="SouhaibBenFarhat")
     from chat import tools
 
     class _Resp:
@@ -484,7 +535,9 @@ def test_list_github_projects_tool_formats_repos():
 
     async def _run():
         with patch.object(tools.httpx, "AsyncClient", return_value=_Client()):
-            return await tools.list_github_projects.ainvoke({})
+            return await tools.list_github_projects.ainvoke(
+                {}, config={"configurable": {"owner_id": owner.pk}}
+            )
 
     result = asyncio.run(_run())
     assert "portfolio-backend" in result
@@ -496,6 +549,7 @@ def test_list_github_projects_tool_formats_repos():
 def test_list_github_projects_tool_handles_rate_limit_gracefully():
     """A GitHub 403 (anonymous rate limit) returns a readable message, not an
     exception that would abort the whole chat turn."""
+    owner = _tenant(github_username="SouhaibBenFarhat")
     import httpx
 
     from chat import tools
@@ -522,7 +576,9 @@ def test_list_github_projects_tool_handles_rate_limit_gracefully():
 
     async def _run():
         with patch.object(tools.httpx, "AsyncClient", return_value=_Client()):
-            return await tools.list_github_projects.ainvoke({})
+            return await tools.list_github_projects.ainvoke(
+                {}, config={"configurable": {"owner_id": owner.pk}}
+            )
 
     result = asyncio.run(_run())
     assert "rate-limited" in result
@@ -557,6 +613,7 @@ def test_github_headers_carry_bearer_token():
 @pytest.mark.django_db(transaction=True)
 def test_failover_to_second_model_when_first_fails():
     """First model errors before streaming → the next model handles the turn."""
+    _tenant()
     fallback = _RecordingAgent(reply="from the fallback")
 
     async def _run():
@@ -577,6 +634,7 @@ def test_failover_to_second_model_when_first_fails():
 @pytest.mark.django_db(transaction=True)
 def test_final_message_is_sent_when_the_model_does_not_stream_tokens():
     """If the answer arrives only as a final message, it's still sent as text."""
+    _tenant()
 
     async def _run():
         with patch("chat.views.build_agents", return_value=(_FinalOnlyAgent(),)):
@@ -595,6 +653,7 @@ def test_final_message_is_sent_when_the_model_does_not_stream_tokens():
 @pytest.mark.django_db(transaction=True)
 def test_empty_response_regenerates_with_the_next_model():
     """An empty answer from the first model falls over to the next model."""
+    _tenant()
 
     async def _run():
         agents = (_EmptyAgent(), _RecordingAgent(reply="from the retry"))
@@ -614,6 +673,7 @@ def test_empty_response_regenerates_with_the_next_model():
 @pytest.mark.django_db(transaction=True)
 def test_graceful_line_when_every_model_returns_empty():
     """If all retries are empty (rare), a graceful line is sent — never a blank bubble."""
+    _tenant()
 
     async def _run():
         with patch("chat.views.build_agents", return_value=(_EmptyAgent(), _EmptyAgent())):
@@ -643,6 +703,7 @@ def _error_frame_from(body: str) -> dict | None:
 
 @pytest.mark.django_db(transaction=True)
 def test_error_is_surfaced_when_all_models_fail():
+    _tenant()
     from chat.views import CHAT_ERROR_MESSAGE
 
     async def _run():
@@ -667,6 +728,7 @@ def test_error_after_a_preamble_is_surfaced_not_swallowed():
     """The reported bug: a model streams "let me look that up", calls a tool, then the
     next step fails — the client used to be left with a half-answer and no error. Now the
     error frame is sent even though text already streamed."""
+    _tenant()
     from chat.views import CHAT_ERROR_MESSAGE
 
     async def _run():
@@ -692,6 +754,7 @@ def test_error_after_a_preamble_is_surfaced_not_swallowed():
 def test_a_broken_turn_is_not_persisted_as_a_reply():
     """A half-answer from a failed turn must not be saved — on reload it would read as a
     complete reply that stops for no reason."""
+    _tenant()
 
     async def _run():
         from chat.models import Message
@@ -751,6 +814,8 @@ def test_build_agents_builds_one_agent_per_model_and_key():
 
 @pytest.mark.django_db(transaction=True)
 def test_rate_limit_blocks_after_the_limit():
+    _tenant()
+
     async def _run():
         statuses = []
         with (
@@ -797,6 +862,7 @@ def test_client_ip_falls_back_to_remote_addr_locally():
 def test_rate_limit_key_ignores_spoofed_forwarded_for():
     """An abuser rotating X-Forwarded-For can't mint fresh rate-limit buckets: the key
     comes from Cloudflare's CF-Connecting-IP, which the client can't forge."""
+    _tenant()
 
     async def _run():
         statuses = []
@@ -823,6 +889,8 @@ def test_rate_limit_key_ignores_spoofed_forwarded_for():
 
 @pytest.mark.django_db(transaction=True)
 def test_message_that_is_too_long_is_rejected():
+    _tenant()
+
     async def _run():
         with override_settings(CHAT_MAX_MESSAGE_LENGTH=10):
             return await AsyncClient().post(
@@ -836,6 +904,7 @@ def test_message_that_is_too_long_is_rejected():
 
 @pytest.mark.django_db(transaction=True)
 def test_history_sent_to_the_model_is_bounded():
+    _tenant()
     recording = _RecordingAgent(reply="ok")
 
     async def _run():
@@ -856,8 +925,12 @@ def test_history_sent_to_the_model_is_bounded():
         return recording.seen
 
     seen = asyncio.run(_run())
-    assert all(len(messages) <= 2 for messages in seen)
-    assert max(len(messages) for messages in seen) == 2  # the cap is actually reached
+    # The cap bounds the conversation, not the system line naming the tenant — that one is
+    # prepended after the trim precisely so a long thread can't push it out.
+    history = [[m for m in messages if m["role"] != "system"] for messages in seen]
+    assert all(len(messages) <= 2 for messages in history)
+    assert max(len(messages) for messages in history) == 2
+    assert all(messages[0]["role"] == "system" for messages in seen)  # the cap is actually reached
 
 
 # --- Context-window usage --------------------------------------------------
@@ -880,6 +953,7 @@ def _post_and_drain(agents: tuple) -> str:
 def test_usage_frame_reports_the_largest_prompt_of_the_turn():
     """A turn makes several model calls; the gauge reports the fullest prompt, not the
     first one and not the sum."""
+    _tenant()
     with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
         usage = _usage_from(_post_and_drain((_UsageAgent(),)))
     assert usage["context_tokens"] == 450
@@ -890,6 +964,7 @@ def test_usage_frame_reports_the_largest_prompt_of_the_turn():
 @pytest.mark.django_db(transaction=True)
 def test_usage_frame_is_sent_before_done():
     """The client can rely on `usage` arriving while the stream is still open."""
+    _tenant()
     body = _post_and_drain((_UsageAgent(),))
     assert '"usage"' in body
     assert body.index('"usage"') < body.index('"done"')
@@ -898,6 +973,7 @@ def test_usage_frame_is_sent_before_done():
 @pytest.mark.django_db(transaction=True)
 def test_no_usage_frame_when_the_provider_reports_none():
     """No usage reported → no frame, so the client never renders a gauge from nothing."""
+    _tenant()
     body = _post_and_drain((_RecordingAgent(),))
     assert _usage_from(body) is None
     assert '"done": true' in body
@@ -922,6 +998,7 @@ def _model_from(body: str) -> str | None:
 def test_stream_names_the_answering_model_before_the_reply():
     """The model handling the turn is named in a `model` frame, before its text, so the
     client can show who's replying (it maps the id to a display name itself)."""
+    _tenant()
     body = _post_and_drain((_RecordingAgent(reply="Hello", model="mistral/mistral-small-latest"),))
     assert _model_from(body) == "mistral/mistral-small-latest"
     assert body.index('"model"') < body.index('"text"')
@@ -930,6 +1007,7 @@ def test_stream_names_the_answering_model_before_the_reply():
 @pytest.mark.django_db(transaction=True)
 def test_model_frame_names_the_model_that_replies_after_failover():
     """On failover the named model is the one that answers, not the one that failed."""
+    _tenant()
     fallback = _RecordingAgent(reply="from the fallback", model="mistral/open-mistral-nemo")
     body = _post_and_drain((_FailingAgent(), fallback))
     assert '"error"' not in body
@@ -939,6 +1017,7 @@ def test_model_frame_names_the_model_that_replies_after_failover():
 @pytest.mark.django_db(transaction=True)
 def test_empty_attempt_is_not_named_only_the_reply_is():
     """An empty first attempt is never named — only the model that produces the reply."""
+    _tenant()
     agents = (
         _EmptyAgent(),
         _RecordingAgent(reply="from the retry", model="mistral/mistral-small-latest"),
@@ -949,6 +1028,7 @@ def test_empty_attempt_is_not_named_only_the_reply_is():
 @pytest.mark.django_db(transaction=True)
 def test_no_model_frame_when_the_provider_reports_no_model():
     """No model id reported → no frame, mirroring the usage frame's omission."""
+    _tenant()
     body = _post_and_drain((_RecordingAgent(reply="hi"),))
     assert _model_from(body) is None
     assert '"text": "hi"' in body
@@ -980,6 +1060,7 @@ def test_token_budget_never_exceeds_the_models_window():
 @pytest.mark.django_db(transaction=True)
 def test_context_tokens_are_persisted_on_the_conversation():
     """The gauge must survive a reload, so the turn's context size is stored."""
+    _tenant()
 
     async def _run():
         from chat.models import Conversation
@@ -1000,11 +1081,12 @@ def test_context_tokens_are_persisted_on_the_conversation():
 @pytest.mark.django_db(transaction=True)
 def test_spent_conversation_refuses_new_messages():
     """Past the budget the chat is disabled: 403, and no model call is made."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation
 
-        conversation = await Conversation.objects.acreate(context_tokens=20000)
+        conversation = await Conversation.objects.acreate(owner=owner, context_tokens=20000)
         with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
             response = await AsyncClient().post(
                 "/chat/stream",
@@ -1021,6 +1103,7 @@ def test_spent_conversation_refuses_new_messages():
 @pytest.mark.django_db(transaction=True)
 def test_a_fresh_conversation_is_never_refused():
     """The budget is per thread — starting a new chat always works."""
+    _tenant()
 
     async def _run():
         with (
@@ -1040,10 +1123,12 @@ def test_a_fresh_conversation_is_never_refused():
 
 @pytest.mark.django_db(transaction=True)
 def test_restore_returns_usage_so_the_gauge_survives_a_reload():
+    owner = _tenant()
+
     async def _run():
         from chat.models import Conversation, Message
 
-        conversation = await Conversation.objects.acreate(context_tokens=4200)
+        conversation = await Conversation.objects.acreate(owner=owner, context_tokens=4200)
         await Message.objects.acreate(conversation=conversation, role="user", content="hi")
         with override_settings(CHAT_MAX_CONTEXT_TOKENS=20000):
             res = await AsyncClient().get(f"/chat/conversations/{conversation.id}/")
@@ -1070,6 +1155,7 @@ def test_token_usage_registered_in_admin():
 def test_token_usage_records_summed_input_and_output_per_model():
     """Consumption sums every model call's input+output for the turn — not the max the
     gauge keeps. _UsageAgent makes two calls (120 and 450 input, 7 output each)."""
+    _tenant()
 
     async def _run():
         from chat.models import TokenUsage
@@ -1091,6 +1177,7 @@ def test_token_usage_records_summed_input_and_output_per_model():
 def test_token_usage_accumulates_across_turns():
     """The counter is cumulative: a second turn adds to the month's running total
     rather than overwriting it (that's what makes it a consumption odometer)."""
+    _tenant()
 
     async def _run():
         from chat.models import TokenUsage
@@ -1201,6 +1288,7 @@ def test_a_failing_scope_check_says_so_instead_of_failing_open_in_silence(caplog
 def test_off_topic_question_never_reaches_the_model():
     """The whole point: someone using the chat as a free coding tutor costs one short
     classification, not a generated answer plus the thread resent as input."""
+    _tenant()
     agent = _RecordingAgent(reply="Here is how you write a for loop in Python...")
 
     async def _run():
@@ -1225,6 +1313,7 @@ def test_off_topic_question_never_reaches_the_model():
 @pytest.mark.django_db(transaction=True)
 def test_a_refused_message_is_saved_so_the_thread_survives_a_reload():
     """The redirect is a real turn in the conversation, not a phantom."""
+    _tenant()
 
     async def _run():
         from chat.models import Message
@@ -1249,6 +1338,7 @@ def test_a_refused_message_is_saved_so_the_thread_survives_a_reload():
 @pytest.mark.django_db(transaction=True)
 def test_an_in_scope_question_is_answered_normally():
     """A real question streams the model's own words, untouched."""
+    _tenant()
 
     async def _run():
         with (
@@ -1272,6 +1362,7 @@ def test_an_in_scope_question_is_answered_normally():
 @pytest.mark.django_db(transaction=True)
 def test_scope_check_can_be_disabled():
     """With CHAT_GUARD_ENABLED off the check never runs and everything is answered."""
+    _tenant()
     guard_spy = AsyncMock(return_value=False)  # would refuse everything, if called
 
     async def _run():
@@ -1380,6 +1471,7 @@ def test_extract_rejects_a_pdf_with_no_text():
 def test_admin_upload_extracts_text_and_stores_blob():
     """Uploading a file fills `content` with its text (for the agent) and keeps the
     original bytes (for the admin preview)."""
+    owner = _tenant()
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from chat.admin import DocumentAdmin, DocumentAdminForm
@@ -1387,7 +1479,7 @@ def test_admin_upload_extracts_text_and_stores_blob():
 
     pdf = _tiny_pdf("Ten years of Django")
     form = DocumentAdminForm(
-        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        data={"owner": owner.pk, "slug": "cv", "title": "CV", "content": "", "is_active": "on"},
         files={"upload": SimpleUploadedFile("cv.pdf", pdf, content_type="application/pdf")},
     )
     assert form.is_valid(), form.errors
@@ -1404,22 +1496,26 @@ def test_admin_upload_extracts_text_and_stores_blob():
 
 @pytest.mark.django_db
 def test_admin_form_requires_content_or_a_file():
+    owner = _tenant()
     from chat.admin import DocumentAdminForm
 
-    form = DocumentAdminForm(data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"})
+    form = DocumentAdminForm(
+        data={"owner": owner.pk, "slug": "cv", "title": "CV", "content": "", "is_active": "on"}
+    )
     assert not form.is_valid()
     assert "content" in form.errors
 
 
 @pytest.mark.django_db
 def test_admin_form_rejects_an_oversized_file():
+    owner = _tenant()
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from chat.admin import DocumentAdminForm
 
     big = SimpleUploadedFile("cv.pdf", b"x" * (10 * 1024 * 1024 + 1))
     form = DocumentAdminForm(
-        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        data={"owner": owner.pk, "slug": "cv", "title": "CV", "content": "", "is_active": "on"},
         files={"upload": big},
     )
     assert not form.is_valid()
@@ -1428,12 +1524,14 @@ def test_admin_form_rejects_an_oversized_file():
 
 @pytest.mark.django_db
 def test_document_file_is_served_to_staff(client):
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Document
 
     client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
     doc = Document.objects.create(
+        owner=owner,
         slug="cv",
         title="CV",
         content="x",
@@ -1452,6 +1550,7 @@ def test_document_file_is_served_to_staff(client):
 def test_document_admin_pages_render_with_upload_and_preview(client):
     """The add page carries the upload field and the change page shows the PDF preview
     iframe — catches template/form breakage the form-level tests can't see."""
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Document
@@ -1462,6 +1561,7 @@ def test_document_admin_pages_render_with_upload_and_preview(client):
     assert b'name="upload"' in add_page.content
 
     doc = Document.objects.create(
+        owner=owner,
         slug="cv",
         title="CV",
         content="x",
@@ -1478,9 +1578,10 @@ def test_document_admin_pages_render_with_upload_and_preview(client):
 @pytest.mark.django_db
 def test_document_file_requires_admin_login(client):
     """The blob is admin-only — anonymous requests are sent to the login page."""
+    owner = _tenant()
     from chat.models import Document
 
-    doc = Document.objects.create(slug="cv", title="CV", content="x", file_data=b"d")
+    doc = Document.objects.create(owner=owner, slug="cv", title="CV", content="x", file_data=b"d")
     response = client.get(f"/admin/chat/document/{doc.pk}/file/")
     assert response.status_code == 302
     assert "/admin/login/" in response["Location"]
@@ -1488,15 +1589,16 @@ def test_document_file_requires_admin_login(client):
 
 @pytest.mark.django_db(transaction=True)
 def test_list_documents_tool_lists_only_active_documents():
+    owner = _tenant()
     from chat.models import Document
     from chat.tools import list_documents
 
     async def _run():
-        await Document.objects.acreate(slug="cv", title="Résumé", content="…")
+        await Document.objects.acreate(owner=owner, slug="cv", title="Résumé", content="…")
         await Document.objects.acreate(
-            slug="old-letter", title="Old letter", content="…", is_active=False
+            owner=owner, slug="old-letter", title="Old letter", content="…", is_active=False
         )
-        return await list_documents.ainvoke({})
+        return await list_documents.ainvoke({}, config={"configurable": {"owner_id": owner.pk}})
 
     result = asyncio.run(_run())
     assert "cv: Résumé" in result
@@ -1505,24 +1607,30 @@ def test_list_documents_tool_lists_only_active_documents():
 
 @pytest.mark.django_db(transaction=True)
 def test_read_document_tool_returns_the_content():
+    owner = _tenant()
     from chat.models import Document
     from chat.tools import read_document
 
     async def _run():
         await Document.objects.acreate(
-            slug="cover-letter", title="Cover letter", content="I build backends."
+            owner=owner, slug="cover-letter", title="Cover letter", content="I build backends."
         )
-        return await read_document.ainvoke({"slug": "cover-letter"})
+        return await read_document.ainvoke(
+            {"slug": "cover-letter"}, config={"configurable": {"owner_id": owner.pk}}
+        )
 
     assert "I build backends." in asyncio.run(_run())
 
 
 @pytest.mark.django_db(transaction=True)
 def test_read_document_tool_handles_an_unknown_slug():
+    owner = _tenant()
     from chat.tools import read_document
 
     async def _run():
-        return await read_document.ainvoke({"slug": "nope"})
+        return await read_document.ainvoke(
+            {"slug": "nope"}, config={"configurable": {"owner_id": owner.pk}}
+        )
 
     assert "No document named 'nope'" in asyncio.run(_run())
 
@@ -1530,12 +1638,15 @@ def test_read_document_tool_handles_an_unknown_slug():
 @pytest.mark.django_db(transaction=True)
 def test_read_document_output_is_capped():
     """A very long document can't blow the context window through the tool."""
+    owner = _tenant()
     from chat.models import Document
     from chat.tools import read_document
 
     async def _run():
-        await Document.objects.acreate(slug="book", title="Book", content="x" * 7000)
-        return await read_document.ainvoke({"slug": "book"})
+        await Document.objects.acreate(owner=owner, slug="book", title="Book", content="x" * 7000)
+        return await read_document.ainvoke(
+            {"slug": "book"}, config={"configurable": {"owner_id": owner.pk}}
+        )
 
     assert len(asyncio.run(_run())) == 6000
 
@@ -1549,12 +1660,13 @@ def test_document_tools_are_wired_into_the_agent():
 
 @pytest.mark.django_db(transaction=True)
 def test_read_document_tool_excludes_inactive_documents():
+    owner = _tenant()
     from chat.models import Document
     from chat.tools import read_document
 
     async def _run():
         await Document.objects.acreate(
-            slug="old-letter", title="Old letter", content="stale", is_active=False
+            owner=owner, slug="old-letter", title="Old letter", content="stale", is_active=False
         )
         return await read_document.ainvoke({"slug": "old-letter"})
 
@@ -1566,7 +1678,7 @@ def test_document_tools_defer_the_file_blob():
     chat turn would spike the single 512MB worker."""
     from chat.tools import _documents
 
-    deferred, _ = _documents().query.deferred_loading
+    deferred, _ = _documents(owner_id=1).query.deferred_loading
     assert "file_data" in deferred
 
 
@@ -1588,14 +1700,26 @@ def test_admin_changelist_defers_the_file_blob(rf):
 @pytest.mark.django_db
 def test_admin_edit_without_new_upload_preserves_the_blob():
     """Hand-fixing the extracted text (the documented workflow) must not lose the file."""
+    owner = _tenant()
     from chat.admin import DocumentAdmin, DocumentAdminForm
     from chat.models import Document
 
     doc = Document.objects.create(
-        slug="cv", title="CV", content="rough text", file_data=b"%PDF-orig", file_name="cv.pdf"
+        owner=owner,
+        slug="cv",
+        title="CV",
+        content="rough text",
+        file_data=b"%PDF-orig",
+        file_name="cv.pdf",
     )
     form = DocumentAdminForm(
-        data={"slug": "cv", "title": "CV", "content": "fixed text", "is_active": "on"},
+        data={
+            "owner": owner.pk,
+            "slug": "cv",
+            "title": "CV",
+            "content": "fixed text",
+            "is_active": "on",
+        },
         instance=doc,
     )
     assert form.is_valid(), form.errors
@@ -1610,16 +1734,22 @@ def test_admin_edit_without_new_upload_preserves_the_blob():
 
 @pytest.mark.django_db
 def test_admin_reupload_replaces_content_and_blob():
+    owner = _tenant()
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from chat.admin import DocumentAdmin, DocumentAdminForm
     from chat.models import Document
 
     doc = Document.objects.create(
-        slug="cv", title="CV", content="old", file_data=b"old-bytes", file_name="old.pdf"
+        owner=owner,
+        slug="cv",
+        title="CV",
+        content="old",
+        file_data=b"old-bytes",
+        file_name="old.pdf",
     )
     form = DocumentAdminForm(
-        data={"slug": "cv", "title": "CV", "content": "old", "is_active": "on"},
+        data={"owner": owner.pk, "slug": "cv", "title": "CV", "content": "old", "is_active": "on"},
         files={"upload": SimpleUploadedFile("new.txt", b"brand new text")},
         instance=doc,
     )
@@ -1635,10 +1765,12 @@ def test_admin_reupload_replaces_content_and_blob():
 
 @pytest.mark.django_db
 def test_admin_remove_file_clears_the_blob_but_keeps_content():
+    owner = _tenant()
     from chat.admin import DocumentAdmin, DocumentAdminForm
     from chat.models import Document
 
     doc = Document.objects.create(
+        owner=owner,
         slug="cv",
         title="CV",
         content="keep me",
@@ -1648,6 +1780,7 @@ def test_admin_remove_file_clears_the_blob_but_keeps_content():
     )
     form = DocumentAdminForm(
         data={
+            "owner": owner.pk,
             "slug": "cv",
             "title": "CV",
             "content": "keep me",
@@ -1672,13 +1805,14 @@ def test_admin_remove_file_clears_the_blob_but_keeps_content():
 def test_uploaded_filename_control_characters_are_stripped():
     """A CR/LF smuggled into a filename would make every later Content-Disposition
     header raise BadHeaderError — a permanent 500 on the preview."""
+    owner = _tenant()
     from django.core.files.uploadedfile import SimpleUploadedFile
 
     from chat.admin import DocumentAdmin, DocumentAdminForm
     from chat.models import Document
 
     form = DocumentAdminForm(
-        data={"slug": "cv", "title": "CV", "content": "", "is_active": "on"},
+        data={"owner": owner.pk, "slug": "cv", "title": "CV", "content": "", "is_active": "on"},
         files={"upload": SimpleUploadedFile("a\r\nSet-Cookie: x.txt", b"hi")},
     )
     assert form.is_valid(), form.errors
@@ -1692,12 +1826,14 @@ def test_uploaded_filename_control_characters_are_stripped():
 def test_document_file_handles_unicode_filenames(client):
     """Non-latin-1 names (a Word-export en-dash) must not mangle the header — the
     RFC 5987 filename* form is used instead of a bare f-string."""
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Document
 
     client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
     doc = Document.objects.create(
+        owner=owner,
         slug="cv",
         title="CV",
         content="x",
@@ -1713,12 +1849,13 @@ def test_document_file_handles_unicode_filenames(client):
 
 @pytest.mark.django_db
 def test_document_file_404_when_no_file_uploaded(client):
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Document
 
     client.force_login(User.objects.create_superuser("admin", "a@example.com", "pw"))
-    doc = Document.objects.create(slug="cv", title="CV", content="paste-only, no file")
+    doc = Document.objects.create(owner=owner, slug="cv", title="CV", content="paste-only, no file")
     assert client.get(f"/admin/chat/document/{doc.pk}/file/").status_code == 404
 
 
@@ -1726,12 +1863,15 @@ def test_document_file_404_when_no_file_uploaded(client):
 def test_document_file_denied_to_staff_without_permission(client):
     """admin_view() only checks is_staff — the view must also enforce the Document
     view permission, or any staff account could fetch every uploaded blob."""
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Document
 
     client.force_login(User.objects.create_user("limited", "l@example.com", "pw", is_staff=True))
-    doc = Document.objects.create(slug="cv", title="CV", content="x", file_data=b"secret")
+    doc = Document.objects.create(
+        owner=owner, slug="cv", title="CV", content="x", file_data=b"secret"
+    )
     assert client.get(f"/admin/chat/document/{doc.pk}/file/").status_code == 403
 
 
@@ -1795,6 +1935,7 @@ def test_reordering_the_chain_rebuilds_the_agents():
 @pytest.mark.django_db(transaction=True)
 def test_stream_runs_the_chain_in_the_admins_order():
     """The order dragged in the admin is the order the stream tries models in."""
+    _tenant()
     seen = []
 
     def _spy(provider_keys, model_ids=()):
@@ -1821,6 +1962,7 @@ def test_stream_runs_the_chain_in_the_admins_order():
 
 @pytest.mark.django_db(transaction=True)
 def test_inactive_models_are_left_out_of_the_chain():
+    _tenant()
     seen = []
 
     def _spy(provider_keys, model_ids=()):
@@ -1849,11 +1991,12 @@ def test_inactive_models_are_left_out_of_the_chain():
 def test_restore_gauge_measures_against_the_chain_head_not_the_env_var():
     """Drag a model with a different window to the top and the gauge follows it. Uses a
     cap above both windows, so the clamp — and therefore which model it read — shows."""
+    owner = _tenant()
     from chat.models import ChatModel, Conversation
 
     ChatModel.objects.all().delete()
     ChatModel.objects.create(model_id="zai/glm-4.7-flash", order=0)  # 200k window
-    conversation = Conversation.objects.create(context_tokens=100)
+    conversation = Conversation.objects.create(owner=owner, context_tokens=100)
 
     with override_settings(
         CHAT_MAX_CONTEXT_TOKENS=999_999, CHAT_MODEL="mistral/mistral-small-latest"
@@ -1928,11 +2071,14 @@ def test_drag_ordered_list_keeps_its_order_input_but_hides_the_column(client):
 def test_facts_are_grouped_by_category(client):
     """Facts have no hand-ranked order any more: get_facts hands the model all of them
     at once, so grouping related answers together is the only ordering worth having."""
+    owner = _tenant()
     from chat.models import Fact
 
-    Fact.objects.create(category="Personal", question="Hobbies", answer="Chess")
-    Fact.objects.create(category="Compensation", question="Salary", answer="Competitive")
-    Fact.objects.create(category="Personal", question="Location", answer="Munich")
+    Fact.objects.create(owner=owner, category="Personal", question="Hobbies", answer="Chess")
+    Fact.objects.create(
+        owner=owner, category="Compensation", question="Salary", answer="Competitive"
+    )
+    Fact.objects.create(owner=owner, category="Personal", question="Location", answer="Munich")
 
     assert [f.question for f in Fact.objects.all()] == ["Salary", "Hobbies", "Location"]
 
@@ -2154,6 +2300,7 @@ def test_suggest_followups_shows_the_writer_the_exchange():
 def test_suggestions_frame_arrives_after_the_gauge_and_before_done():
     """Chips are the last frame before done: the gauge (and its budget save) land first,
     so a disconnect during the chip writer's call can never lose them."""
+    _tenant()
 
     async def _run():
         with (
@@ -2179,6 +2326,8 @@ def test_suggestions_frame_arrives_after_the_gauge_and_before_done():
 
 @pytest.mark.django_db(transaction=True)
 def test_no_suggestions_frame_when_the_writer_returns_nothing():
+    _tenant()
+
     async def _run():
         with (
             patch("chat.views.build_agents", return_value=(_RecordingAgent(),)),
@@ -2200,6 +2349,7 @@ def test_no_suggestions_frame_when_the_writer_returns_nothing():
 def test_no_suggestions_after_a_broken_turn():
     """A turn that errored ends with the error frame — chips inviting another question
     would ring hollow next to it, even when a preamble already streamed."""
+    _tenant()
     chips = AsyncMock(return_value=["Anything else?"])
 
     async def _run():
@@ -2223,6 +2373,7 @@ def test_no_suggestions_after_a_broken_turn():
 @pytest.mark.django_db(transaction=True)
 def test_no_suggestions_when_the_thread_just_spent_its_budget():
     """The next send would be refused with a 403 — chips inviting one would be a lie."""
+    _tenant()
     chips = AsyncMock(return_value=["Tell me more?"])
 
     async def _run():
@@ -2248,6 +2399,7 @@ def test_no_suggestions_when_the_thread_just_spent_its_budget():
 def test_no_suggestions_when_every_model_returned_empty():
     """The canned "couldn't find an answer" line is not a model answer — chips inviting
     follow-ups to it would spend another call on the chain that just came back empty."""
+    _tenant()
     chips = AsyncMock(return_value=["Try again?"])
 
     async def _run():
@@ -2272,6 +2424,7 @@ def test_no_suggestions_when_every_model_returned_empty():
 def test_no_suggestions_on_a_refused_message():
     """The redirect already tells the visitor what to ask — and the whole point of
     refusing early is keeping the off-topic path to one cheap call, not two."""
+    _tenant()
     chips = AsyncMock(return_value=["What are his skills?"])
 
     async def _run():
@@ -2295,6 +2448,7 @@ def test_no_suggestions_on_a_refused_message():
 @pytest.mark.django_db(transaction=True)
 def test_suggestions_can_be_disabled():
     """With CHAT_SUGGESTIONS_ENABLED off the writer never runs and no frame is sent."""
+    _tenant()
     chips = AsyncMock(return_value=["Should not appear"])
 
     async def _run():
@@ -2334,9 +2488,10 @@ def _message_id_from(body: str) -> int | None:
 def test_message_rating_defaults_to_null():
     """An unrated message is null, not 0 — 'no opinion', so it never counts as neutral
     feedback in a conversation's totals."""
+    owner = _tenant()
     from chat.models import Conversation, Message
 
-    conv = Conversation.objects.create()
+    conv = Conversation.objects.create(owner=owner)
     message = Message.objects.create(conversation=conv, role="assistant", content="hi")
     assert message.rating is None
 
@@ -2344,11 +2499,12 @@ def test_message_rating_defaults_to_null():
 @pytest.mark.django_db(transaction=True)
 def test_rate_a_message_up_then_down_then_clear():
     """The rating is set, not accumulated: each call replaces the last, and 0 clears it."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         msg = await Message.objects.acreate(conversation=conv, role="assistant", content="hi")
         url = f"/chat/conversations/{conv.id}/messages/{msg.id}/rating/"
         results = []
@@ -2369,10 +2525,12 @@ def test_rate_a_message_up_then_down_then_clear():
 
 @pytest.mark.django_db(transaction=True)
 def test_rating_an_unknown_message_is_404():
+    owner = _tenant()
+
     async def _run():
         from chat.models import Conversation
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         return await AsyncClient().put(
             f"/chat/conversations/{conv.id}/messages/999999/rating/",
             data=json.dumps({"rating": 1}),
@@ -2386,15 +2544,16 @@ def test_rating_an_unknown_message_is_404():
 def test_a_message_can_only_be_rated_through_its_own_conversation():
     """The conversation UUID is the capability: a real message id under someone else's
     conversation is a 404, so ids can't be rated across threads by enumeration."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        owner = await Conversation.objects.acreate()
-        other = await Conversation.objects.acreate()
-        msg = await Message.objects.acreate(conversation=owner, role="assistant", content="hi")
+        mine = await Conversation.objects.acreate(owner=owner)
+        theirs = await Conversation.objects.acreate(owner=owner)
+        msg = await Message.objects.acreate(conversation=mine, role="assistant", content="hi")
         res = await AsyncClient().put(
-            f"/chat/conversations/{other.id}/messages/{msg.id}/rating/",
+            f"/chat/conversations/{theirs.id}/messages/{msg.id}/rating/",
             data=json.dumps({"rating": 1}),
             content_type="application/json",
         )
@@ -2409,11 +2568,12 @@ def test_a_message_can_only_be_rated_through_its_own_conversation():
 @pytest.mark.django_db(transaction=True)
 def test_rating_rejects_an_out_of_range_value():
     """Only -1/0/1 are ratings; anything else is a 400, not a stored nonsense value."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         msg = await Message.objects.acreate(conversation=conv, role="assistant", content="hi")
         res = await AsyncClient().put(
             f"/chat/conversations/{conv.id}/messages/{msg.id}/rating/",
@@ -2432,11 +2592,12 @@ def test_rating_rejects_an_out_of_range_value():
 def test_restore_carries_each_message_id_and_rating():
     """The widget needs a message's id to rate it and its rating to show the current
     thumb state — both must survive a reload."""
+    owner = _tenant()
 
     async def _run():
         from chat.models import Conversation, Message
 
-        conv = await Conversation.objects.acreate()
+        conv = await Conversation.objects.acreate(owner=owner)
         await Message.objects.acreate(conversation=conv, role="user", content="hi")
         await Message.objects.acreate(
             conversation=conv, role="assistant", content="hello!", rating=1
@@ -2454,6 +2615,7 @@ def test_restore_carries_each_message_id_and_rating():
 def test_stream_names_the_persisted_assistant_message():
     """The reply's id streams live, so the visitor can rate it without a reload — and it
     matches the actually-persisted assistant message."""
+    _tenant()
 
     async def _run():
         from chat.models import Message
@@ -2480,6 +2642,7 @@ def test_stream_names_the_persisted_assistant_message():
 @pytest.mark.django_db(transaction=True)
 def test_a_broken_turn_streams_no_message_id():
     """No reply is persisted on a broken turn, so there's nothing to rate — no frame."""
+    _tenant()
     body = _post_and_drain((_FailingAgent(), _FailingAgent()))
     assert '"error"' in body
     assert _message_id_from(body) is None
@@ -2488,11 +2651,12 @@ def test_a_broken_turn_streams_no_message_id():
 @pytest.mark.django_db
 def test_conversation_admin_summarizes_ratings(client):
     """The admin totals each thread's thumbs so chats can be reviewed at a glance."""
+    owner = _tenant()
     from django.contrib.auth.models import User
 
     from chat.models import Conversation, Message
 
-    conv = Conversation.objects.create()
+    conv = Conversation.objects.create(owner=owner)
     Message.objects.create(conversation=conv, role="assistant", content="a", rating=1)
     Message.objects.create(conversation=conv, role="assistant", content="b", rating=1)
     Message.objects.create(conversation=conv, role="assistant", content="c", rating=-1)
@@ -2502,3 +2666,190 @@ def test_conversation_admin_summarizes_ratings(client):
     html = client.get("/admin/chat/conversation/").content.decode()
     assert "↑ 2" in html
     assert "↓ 1" in html
+
+
+# --- Tenancy: ownership and isolation --------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_model_is_told_whose_page_it_is_answering_for():
+    """One cached agent serves every tenant, so the name can't live in the compiled system
+    prompt — it arrives as a system line ahead of the thread."""
+    _tenant()
+    recording = _RecordingAgent(reply="sure")
+
+    async def _run():
+        with patch("chat.views.build_agents", return_value=(recording,)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "who are you?"}),
+                content_type="application/json",
+            )
+            await _drain(response)
+        return recording.seen[0][0]
+
+    preamble = asyncio.run(_run())
+    assert preamble["role"] == "system"
+    assert f"@{settings.FALLBACK_TENANT_HANDLE}" in preamble["content"]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_one_tenants_facts_never_reach_another_tenants_page():
+    """The point of the ownership work. The tools read the owner from the run config, which
+    the view sets from the resolved request — a model asking for everything gets one page."""
+    owner = _tenant()
+    other = _tenant("someone-else")
+
+    async def _run():
+        from chat.models import Fact
+        from chat.tools import get_facts
+
+        await Fact.objects.acreate(
+            owner=owner, category="Compensation", question="Salary", answer="mine-75k"
+        )
+        await Fact.objects.acreate(
+            owner=other, category="Compensation", question="Salary", answer="theirs-90k"
+        )
+        return (
+            await get_facts.ainvoke({}, config={"configurable": {"owner_id": owner.pk}}),
+            await get_facts.ainvoke({}, config={"configurable": {"owner_id": other.pk}}),
+            # No owner in the config at all: fail closed, never fall back to every row.
+            await get_facts.ainvoke({}, config={}),
+        )
+
+    mine, theirs, unscoped = asyncio.run(_run())
+    assert "mine-75k" in mine and "theirs-90k" not in mine
+    assert "theirs-90k" in theirs and "mine-75k" not in theirs
+    assert unscoped == "No facts found."
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_owner_is_hidden_from_the_schema_the_model_sees():
+    """The model must not be able to name a tenant. `config` is injected by LangChain and
+    kept out of the tool's argument schema, which is what makes the scoping unspoofable."""
+    from chat.tools import get_facts, read_document
+
+    assert "config" not in get_facts.args
+    assert "owner_id" not in get_facts.args
+    assert set(read_document.args) == {"slug"}
+
+
+@pytest.mark.django_db(transaction=True)
+def test_two_tenants_can_both_have_a_cv():
+    """Document.slug was globally unique when this was one person's CV; the second tenant
+    to upload one could not save. It is unique per owner now."""
+    owner = _tenant()
+    other = _tenant("someone-else")
+    from chat.models import Document
+
+    Document.objects.create(owner=owner, slug="cv", title="CV", content="mine")
+    Document.objects.create(owner=other, slug="cv", title="CV", content="theirs")
+    assert Document.objects.filter(slug="cv").count() == 2
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_thread_from_another_tenants_page_does_not_resume_here():
+    """A conversation id is scoped to the tenant it started on. Carried to another page it
+    reads as unknown and starts fresh — the same path as a wiped free database."""
+    _tenant()
+    other = _tenant("someone-else")
+
+    async def _run():
+        from chat.models import Conversation
+
+        theirs = await Conversation.objects.acreate(owner=other)
+        with patch("chat.views.build_agents", return_value=(_RecordingAgent(reply="hi"),)):
+            response = await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hello", "conversation_id": str(theirs.id)}),
+                content_type="application/json",
+            )
+            body = await _drain(response)
+        return str(theirs.id), _conversation_id_from(body)
+
+    theirs_id, answered_in = asyncio.run(_run())
+    assert answered_in != theirs_id
+
+
+@pytest.mark.django_db
+def test_a_thread_cannot_be_restored_or_rated_from_another_tenants_page():
+    """Possessing the UUID is still the check, but it is now checked against the tenant the
+    request arrived on, so a leaked id can't rehydrate a stranger's transcript."""
+    from django.test import Client
+
+    from chat.models import Conversation, Message
+
+    other = _tenant("someone-else")
+    _tenant()  # the tenant a request naming nobody resolves to
+    theirs = Conversation.objects.create(owner=other)
+    msg = Message.objects.create(conversation=theirs, role="assistant", content="private")
+
+    client = Client()
+    assert client.get(f"/chat/conversations/{theirs.id}/").status_code == 404
+    assert client.delete(f"/chat/conversations/{theirs.id}/").status_code == 404
+    rated = client.put(
+        f"/chat/conversations/{theirs.id}/messages/{msg.id}/rating/",
+        data=json.dumps({"rating": 1}),
+        content_type="application/json",
+    )
+    assert rated.status_code == 404
+    msg.refresh_from_db()
+    assert msg.rating is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_unknown_page_is_a_404_not_someone_elses_answer():
+    """With no tenant resolvable the stream refuses. Without this it would have to guess,
+    and guessing means answering out of whichever data it happened to find."""
+
+    async def _run():
+        with override_settings(FALLBACK_TENANT_HANDLE=""):
+            return await AsyncClient().post(
+                "/chat/stream",
+                data=json.dumps({"message": "hi"}),
+                content_type="application/json",
+            )
+
+    assert asyncio.run(_run()).status_code == 404
+
+
+@pytest.mark.django_db
+def test_an_unclaimed_subdomain_is_a_404_not_the_default_page():
+    """A request to nobody.hirees.me asked for a specific page. Falling back to the default
+    tenant would serve one person's CV under another person's address, and would quietly
+    make every unclaimed subdomain a mirror of the default page."""
+    from django.test import RequestFactory
+
+    from core.tenancy import resolve_tenant
+
+    _tenant()  # the default tenant exists and is published
+    rf = RequestFactory()
+
+    def tenant_on(host):
+        # get_host() validates against ALLOWED_HOSTS, which doesn't carry the real domain
+        # under test settings — so allow the ones this test names.
+        with override_settings(ALLOWED_HOSTS=["hirees.me", ".hirees.me", ".onrender.com"]):
+            return resolve_tenant(rf.post("/chat/stream", HTTP_HOST=host))
+
+    assert tenant_on("nobody.hirees.me") is None
+    # The apex names nobody, so the fallback is right there — this is the Astro portfolio.
+    assert tenant_on("hirees.me") is not None
+    assert tenant_on("portfolio-backend-2huw.onrender.com") is not None
+    # A reserved label is a platform host, not a claim on a page, so it falls back too.
+    assert tenant_on("app.hirees.me") is not None
+
+
+@pytest.mark.django_db
+def test_the_host_wins_over_a_handle_in_the_body():
+    """A visitor on one tenant's page must not be able to ask about another by editing a
+    JSON field. The host is the part of a request they cannot forge."""
+    from django.test import RequestFactory
+
+    from core.tenancy import resolve_tenant
+
+    _tenant()
+    _tenant("someone-else")
+    with override_settings(ALLOWED_HOSTS=[".hirees.me"]):
+        request = RequestFactory().post("/chat/stream", HTTP_HOST="someone-else.hirees.me")
+        found = resolve_tenant(request, handle=settings.FALLBACK_TENANT_HANDLE)
+    assert found.handle == "someone-else"
