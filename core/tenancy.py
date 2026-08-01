@@ -63,9 +63,21 @@ def _tenant_query(handle: str):
 
 
 def _candidates(request, handle: str = "") -> list[str]:
-    """Handles to try, best first. Empty entries are skipped by the callers."""
+    """Handles to try, best first. Empty entries are skipped by the callers.
+
+    When the host names a tenant, that name is the ONLY candidate — no falling back. A
+    request to `nobody.hirees.me` has asked for a specific page, and if that page doesn't
+    exist the honest answer is 404. Letting it fall through to the default tenant would
+    serve one person's CV under another person's address, which is worse than a dead link
+    and would quietly make every unclaimed subdomain a mirror of the default page.
+
+    The fallback only applies when the host names nobody at all — the apex, the onrender
+    hostname, localhost — which is the case the Astro portfolio is in.
+    """
+    from_host = handle_from_host(request.get_host() if request is not None else "")
+    if from_host:
+        return [from_host]
     return [
-        handle_from_host(request.get_host() if request is not None else ""),
         (handle or "").strip().lower(),
         (settings.FALLBACK_TENANT_HANDLE or "").strip().lower(),
     ]

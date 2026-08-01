@@ -18,10 +18,25 @@ from django.conf import settings
 from django.db import migrations
 
 
-# Which account is tenant #1: the earliest superuser, which on this instance is the owner.
-# Falls back to the earliest account of any kind, so an instance whose first user was never
-# promoted still gets its rows assigned rather than silently orphaning them.
 def _first_account(User):
+    """Which account becomes tenant #1.
+
+    `DEFAULT_TENANT_EMAIL` first, and it is worth setting. "The earliest superuser" reads
+    like the instance owner but often isn't: a preview or throwaway admin made while setting
+    the box up usually has a lower id than the real account, and picking it would hand that
+    account every document, fact and conversation — and then name it to every visitor as
+    whose page they are on. Verified on a copy of the development database, where exactly
+    that happened.
+
+    Falls back to the earliest superuser, then to the earliest account of any kind, so an
+    instance whose first user was never promoted still gets its rows assigned rather than
+    silently orphaning them.
+    """
+    email = (settings.DEFAULT_TENANT_EMAIL or "").strip()
+    if email:
+        chosen = User.objects.filter(email__iexact=email).order_by("id").first()
+        if chosen is not None:
+            return chosen
     return (
         User.objects.filter(is_superuser=True).order_by("id").first()
         or User.objects.order_by("id").first()

@@ -2811,3 +2811,45 @@ def test_an_unknown_page_is_a_404_not_someone_elses_answer():
             )
 
     assert asyncio.run(_run()).status_code == 404
+
+
+@pytest.mark.django_db
+def test_an_unclaimed_subdomain_is_a_404_not_the_default_page():
+    """A request to nobody.hirees.me asked for a specific page. Falling back to the default
+    tenant would serve one person's CV under another person's address, and would quietly
+    make every unclaimed subdomain a mirror of the default page."""
+    from django.test import RequestFactory
+
+    from core.tenancy import resolve_tenant
+
+    _tenant()  # the default tenant exists and is published
+    rf = RequestFactory()
+
+    def tenant_on(host):
+        # get_host() validates against ALLOWED_HOSTS, which doesn't carry the real domain
+        # under test settings — so allow the ones this test names.
+        with override_settings(ALLOWED_HOSTS=["hirees.me", ".hirees.me", ".onrender.com"]):
+            return resolve_tenant(rf.post("/chat/stream", HTTP_HOST=host))
+
+    assert tenant_on("nobody.hirees.me") is None
+    # The apex names nobody, so the fallback is right there — this is the Astro portfolio.
+    assert tenant_on("hirees.me") is not None
+    assert tenant_on("portfolio-backend-2huw.onrender.com") is not None
+    # A reserved label is a platform host, not a claim on a page, so it falls back too.
+    assert tenant_on("app.hirees.me") is not None
+
+
+@pytest.mark.django_db
+def test_the_host_wins_over_a_handle_in_the_body():
+    """A visitor on one tenant's page must not be able to ask about another by editing a
+    JSON field. The host is the part of a request they cannot forge."""
+    from django.test import RequestFactory
+
+    from core.tenancy import resolve_tenant
+
+    _tenant()
+    _tenant("someone-else")
+    with override_settings(ALLOWED_HOSTS=[".hirees.me"]):
+        request = RequestFactory().post("/chat/stream", HTTP_HOST="someone-else.hirees.me")
+        found = resolve_tenant(request, handle=settings.FALLBACK_TENANT_HANDLE)
+    assert found.handle == "someone-else"
