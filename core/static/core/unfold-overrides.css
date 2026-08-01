@@ -30,7 +30,11 @@
    * control, this one is a band across the full width of the page, and the same
    * alpha that reads as depth in a 2px well reads as a bruise at 200px wide. */
   --pf-scroll-fade: color-mix(in srgb, var(--pf-ink) 2%, transparent);
-  /* A rule that has to be SEEN on a surface. Mixed from the ink, not from --pf-line:
+  /* USE THIS, NOT --pf-line, FOR ANY LINE DRAWN ON A SURFACE. --pf-line is sized to part
+   * a card from the PAGE; on a surface it disappears, and this has now been got wrong
+   * three times — the sidebar edge, the search divider, and the table header.
+   *
+   * A rule that has to be SEEN on a surface. Mixed from the ink, not from --pf-line:
    * the line token is #222730 in dark and the surface it would sit on is #1e242e,
    * four values apart — invisible. Ink inverts with the theme, so a fraction of it
    * lands on the readable side in both. */
@@ -178,8 +182,29 @@ div[class~="lg:scrollable-top"]::after {
 
 /* Column headers sit on the surface; tint them one step toward the page so
  * the table reads as rows-on-a-card, not floating text. */
+/* The header labels the rows, so it cannot be the plane BELOW them — that inverts what
+ * contains what, and it was sitting in a well while the rows floated above it. It tints
+ * UP toward the toolbar instead, continuing the strip it hangs off.
+ *
+ * The tint is small on purpose. Elevation is for things that overlap, and this header does
+ * not; what separates it from a data row is type and a firm bottom edge, not tone. Left on
+ * the rows' exact plane it simply read as another row. */
 #result_list thead th {
-  background-color: color-mix(in srgb, var(--pf-field) 55%, var(--pf-surface));
+  background-color: color-mix(in srgb, var(--pf-surface-raised) 70%, var(--pf-surface));
+  border-bottom: 2px solid var(--pf-divider) !important;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+}
+/* Unfold puts the sort link inside the cell, so the type rules have to reach it too. */
+#result_list thead th a {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
 /* The changelist toolbar strip (search + filters) sits one step above the card. */
@@ -462,7 +487,8 @@ div[class~="lg:scrollable-top"]::after {
   border-radius: 6px;
   background-color: var(--pf-tooltip-bg);
   color: var(--pf-tooltip-ink);
-  border: 1px solid var(--pf-line);
+  /* No border. It carried --pf-line, which in light mode drew a pale outline around a dark
+     chip — the edge of the wrong plane. Contrast and the shadow do the work. */
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1;
