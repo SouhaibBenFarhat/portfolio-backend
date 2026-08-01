@@ -972,3 +972,14 @@ def test_the_sidebar_covers_every_model_an_operator_edits():
         if f"/admin/{m._meta.app_label}/{m._meta.model_name}/" not in listed
     }
     assert missing == {"auth.group", "sites.site", "socialaccount.socialtoken"}
+
+
+@pytest.mark.django_db
+def test_every_sidebar_group_is_collapsible():
+    """The sidebar opens as five headings, not eleven links. Unfold only renders the
+    chevron and the click handler when a group sets `collapsible`, so an added group that
+    forgets it silently stays permanently expanded and the sidebar drifts back to a list."""
+    from django.conf import settings
+
+    groups = settings.UNFOLD["SIDEBAR"]["navigation"]
+    assert all(group.get("collapsible") for group in groups)

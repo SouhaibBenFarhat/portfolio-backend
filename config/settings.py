@@ -447,6 +447,12 @@ UNFOLD = {
     # accounts are the owner's), sites.Site (allauth requires SITE_ID but nothing edits it),
     # and socialaccount.SocialToken (raw OAuth tokens; reading them helps nobody).
     #
+    # Every group is `collapsible`, so the sidebar opens as five headings rather than eleven
+    # links: click one and its items unfold beneath it. Unfold expands whichever group holds
+    # the page you're currently on, so navigating never leaves you facing a closed list with
+    # no idea where you are. Five short lists you choose between beat one long list you have
+    # to read past — which was the actual complaint.
+    #
     # No per-item `permission` callbacks: every item is visible to any staff account, and
     # Django still enforces the real check on the page itself, so a link they can't use is a
     # 403 rather than a leak. Worth revisiting the day staff means more than one person.
@@ -457,6 +463,7 @@ UNFOLD = {
             {
                 "title": "Tenants",
                 "separator": True,
+                "collapsible": True,
                 "items": [
                     {
                         "title": "Pages",
@@ -473,6 +480,7 @@ UNFOLD = {
             {
                 "title": "What the assistant knows",
                 "separator": True,
+                "collapsible": True,
                 "items": [
                     {
                         "title": "Documents",
@@ -489,6 +497,7 @@ UNFOLD = {
             {
                 "title": "Chat",
                 "separator": True,
+                "collapsible": True,
                 "items": [
                     {
                         "title": "Conversations",
@@ -510,6 +519,7 @@ UNFOLD = {
             {
                 "title": "Sign-in",
                 "separator": True,
+                "collapsible": True,
                 "items": [
                     {
                         "title": "Social login apps",
@@ -531,6 +541,7 @@ UNFOLD = {
             {
                 "title": "Keys",
                 "separator": True,
+                "collapsible": True,
                 "items": [
                     {
                         "title": "API credentials",
