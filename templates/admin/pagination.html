@@ -1,0 +1,28 @@
+{% load unfold unfold_list i18n theme %}
+{% comment %}
+Overrides unfold/templates/admin/pagination.html.
+
+Unfold's version renders the page links and then a Save button for editable lists. The Save
+button is gone from here — it is not pagination, and it only lived here because this block
+used to be the page footer; it now has its own sticky bar in admin/change_list.html.
+
+Order in the cluster: the page numbers, then rows-per-page, then "Show all" — narrowing from
+where you are, to how much you see at a time, to abandoning paging altogether.
+
+The container also drops `lg:h-[64px]` and the `container mx-auto` centring, both sized for a
+full-width bar at the bottom of the page.
+{% endcomment %}
+
+<div class="changelist-pagination flex flex-row items-center">
+    {% if cl.paginator.template_name %}
+        {% include cl.paginator.template_name %}
+    {% else %}
+        {% include "unfold/helpers/pagination_default.html" %}
+    {% endif %}
+
+    {% page_size %}
+
+    {% if show_all_url %}
+        <a href="{{ show_all_url }}" class="showall">{% translate 'Show all' %}</a>
+    {% endif %}
+</div>

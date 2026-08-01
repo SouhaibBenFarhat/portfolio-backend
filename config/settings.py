@@ -417,65 +417,48 @@ UNFOLD = {
     # lives with the values.
     "COLORS": ADMIN_COLORS,
     # --- Sidebar --------------------------------------------------------------
-    # Without this, Unfold lists every registered model grouped by Django app, alphabetically.
-    # That produced a sidebar nobody could read: "users", "email addresses", "social accounts"
-    # and "profiles" sat next to each other with nothing saying how they differ, "social
-    # application tokens" and "sites" appeared despite never being touched, and the two things
-    # an operator actually opens most — documents and facts — were buried under "chat".
+    # One group per Django app, named as the app names itself, listing exactly the models
+    # that app registers, and opening that app's own index page.
     #
-    # So the navigation is written out by hand, grouped by the job you came to do rather than
-    # by which app happens to define the model, and the labels say what the row IS:
+    # It was cut by JOB first — "Tenants", "What the assistant knows", "Keys" — which read
+    # better but described something that does not exist: those groups spanned apps, so a
+    # group had no page of its own to open, two of them landed on the same app index, and
+    # clicking "Tenants" arrived at a screen headed "Core administration" listing a different
+    # set of models. A sidebar that cannot take you to the thing it names is lying about the
+    # structure underneath it.
     #
-    #   Pages       = core.Profile        one per tenant: their handle, and whether it's live
-    #   Accounts    = auth.User           the sign-in identity — one person can have several
-    #                                     email addresses and several linked providers
-    #   Email addresses / Linked providers = allauth's records hanging off an account
+    # ITEM ORDER MATCHES THE APP INDEX, which sorts alphabetically by plural name — so the
+    # panel and the page a rail icon opens list the same things in the same order. Two lists
+    # of the same models in different orders is its own small dishonesty.
     #
-    # THE TRADE-OFF: a hand-written list does not grow by itself, so a newly registered model
-    # would be invisible until someone adds it here. Unfold's "All applications" link was the
-    # first answer to that and it was removed: with only three models outside the groups it
-    # printed the same list a second time, which is noise rather than a safety net. The guard
-    # is now a test — core.tests.test_the_sidebar_covers_every_model_an_operator_edits pins
-    # exactly which models are absent, so registering a fourth without placing it turns CI red
-    # rather than quietly hiding it. Deliberately left out: auth.Group (no roles here — the
-    # only accounts are the owner's), sites.Site (allauth requires SITE_ID but nothing edits
-    # it), and socialaccount.SocialToken (raw OAuth tokens; reading them helps nobody).
-    #
-    # Every group is `collapsible`, so the sidebar opens as five headings rather than eleven
-    # links: click one and its items unfold beneath it. Unfold expands whichever group holds
-    # the page you're currently on, so navigating never leaves you facing a closed list with
-    # no idea where you are. Five short lists you choose between beat one long list you have
-    # to read past — which was the actual complaint.
-    #
-    # No per-item `permission` callbacks: every item is visible to any staff account, and
-    # Django still enforces the real check on the page itself, so a link they can't use is a
-    # 403 rather than a leak. Worth revisiting the day staff means more than one person.
+    # Nothing is hidden now either. Sites and Groups were left out of the job-based version
+    # as noise; they are registered admin models, and a map that quietly omits things is the
+    # same problem in a smaller form.
     "SIDEBAR": {
         "show_search": True,
-        "show_all_applications": False,  # see the note above on what guards the list instead
+        "show_all_applications": False,  # the groups below already cover every app
         "navigation": [
             {
-                "title": "Tenants",
-                "icon": "groups",
+                "title": "Chat",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "chat"}),
+                "icon": "forum",
                 "separator": True,
                 "items": [
                     {
-                        "title": "Pages",
-                        "icon": "public",
-                        "link": reverse_lazy("admin:core_profile_changelist"),
+                        "title": "API credentials",
+                        "icon": "vpn_key",
+                        "link": reverse_lazy("admin:chat_llmcredential_changelist"),
                     },
                     {
-                        "title": "Accounts",
-                        "icon": "person",
-                        "link": reverse_lazy("admin:auth_user_changelist"),
+                        "title": "Chat models",
+                        "icon": "smart_toy",
+                        "link": reverse_lazy("admin:chat_chatmodel_changelist"),
                     },
-                ],
-            },
-            {
-                "title": "What the assistant knows",
-                "icon": "menu_book",
-                "separator": True,
-                "items": [
+                    {
+                        "title": "Conversations",
+                        "icon": "forum",
+                        "link": reverse_lazy("admin:chat_conversation_changelist"),
+                    },
                     {
                         "title": "Documents",
                         "icon": "description",
@@ -486,61 +469,90 @@ UNFOLD = {
                         "icon": "help",
                         "link": reverse_lazy("admin:chat_fact_changelist"),
                     },
-                ],
-            },
-            {
-                "title": "Chat",
-                "icon": "forum",
-                "separator": True,
-                "items": [
                     {
-                        "title": "Conversations",
-                        "icon": "forum",
-                        "link": reverse_lazy("admin:chat_conversation_changelist"),
-                    },
-                    {
-                        "title": "Models",
-                        "icon": "smart_toy",
-                        "link": reverse_lazy("admin:chat_chatmodel_changelist"),
-                    },
-                    {
-                        "title": "Token usage",
+                        "title": "Token usages",
                         "icon": "monitoring",
                         "link": reverse_lazy("admin:chat_tokenusage_changelist"),
                     },
                 ],
             },
             {
-                "title": "Sign-in",
-                "icon": "login",
+                "title": "Core",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "core"}),
+                "icon": "public",
                 "separator": True,
                 "items": [
+                    {
+                        "title": "Profiles",
+                        "icon": "public",
+                        "link": reverse_lazy("admin:core_profile_changelist"),
+                    },
                     {
                         "title": "Social login apps",
                         "icon": "login",
                         "link": reverse_lazy("admin:core_oauthcredential_changelist"),
                     },
+                ],
+            },
+            {
+                "title": "Authentication",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "auth"}),
+                "icon": "person",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Groups",
+                        "icon": "groups",
+                        "link": reverse_lazy("admin:auth_group_changelist"),
+                    },
+                    {
+                        "title": "Users",
+                        "icon": "person",
+                        "link": reverse_lazy("admin:auth_user_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "Accounts",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "account"}),
+                "icon": "mail",
+                "separator": True,
+                "items": [
                     {
                         "title": "Email addresses",
                         "icon": "mail",
                         "link": reverse_lazy("admin:account_emailaddress_changelist"),
                     },
+                ],
+            },
+            {
+                "title": "Social accounts",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "socialaccount"}),
+                "icon": "link",
+                "separator": True,
+                "items": [
                     {
-                        "title": "Linked providers",
+                        "title": "Social accounts",
                         "icon": "link",
                         "link": reverse_lazy("admin:socialaccount_socialaccount_changelist"),
+                    },
+                    {
+                        "title": "Social application tokens",
+                        "icon": "key",
+                        "link": reverse_lazy("admin:socialaccount_socialtoken_changelist"),
                     },
                 ],
             },
             {
-                "title": "Keys",
-                "icon": "key",
+                "title": "Sites",
+                "link": reverse_lazy("admin:app_list", kwargs={"app_label": "sites"}),
+                "icon": "dns",
                 "separator": True,
                 "items": [
                     {
-                        "title": "API credentials",
-                        "icon": "vpn_key",
-                        "link": reverse_lazy("admin:chat_llmcredential_changelist"),
+                        "title": "Sites",
+                        "icon": "dns",
+                        "link": reverse_lazy("admin:sites_site_changelist"),
                     },
                 ],
             },

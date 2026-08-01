@@ -951,15 +951,15 @@ def test_every_sidebar_link_resolves():
 
     groups = settings.UNFOLD["SIDEBAR"]["navigation"]
     links = [str(item["link"]) for group in groups for item in group["items"]]
-    assert len(links) == 11, "a group changed — check the sidebar still covers what it should"
+    assert len(links) == 14, "a group changed — check the sidebar still covers what it should"
     assert all(link.startswith("/admin/") for link in links)
 
 
 @pytest.mark.django_db
 def test_the_sidebar_covers_every_model_an_operator_edits():
-    """Anything registered but absent from the sidebar is only reachable through 'All
-    applications'. That's fine for plumbing (Sites, Groups, OAuth tokens) and wrong for
-    anything else, so this pins which models were deliberately left out."""
+    """The sidebar is one group per app listing exactly what that app registers, so nothing
+    may be absent. An earlier version hid Sites, Groups and OAuth tokens as noise; a map that
+    quietly omits things is the same dishonesty as one that points somewhere it doesn't go."""
     from django.conf import settings
     from django.contrib import admin as django_admin
 
@@ -973,7 +973,7 @@ def test_the_sidebar_covers_every_model_an_operator_edits():
         for m in django_admin.site._registry
         if f"/admin/{m._meta.app_label}/{m._meta.model_name}/" not in listed
     }
-    assert missing == {"auth.group", "sites.site", "socialaccount.socialtoken"}
+    assert missing == set(), f"registered but not in the sidebar: {sorted(missing)}"
 
 
 @pytest.mark.django_db
@@ -1007,7 +1007,11 @@ def test_every_sidebar_model_is_themed_and_searchable():
     Two of these are allauth's own registrations, which arrive as plain django.contrib
     ModelAdmins — unstyled, and in EmailAddress's case unsearchable — so they are
     re-registered in core.admin. This fails if a third-party model is added to the sidebar
-    without the same treatment."""
+    without the same treatment.
+
+    Filters are NOT required: Group has a name and a permissions m2m and nothing worth
+    filtering on, and demanding one everywhere would mean inventing filters to satisfy a
+    test. Search is different — every list benefits from it."""
     from django.conf import settings
     from django.contrib import admin as django_admin
     from unfold.admin import ModelAdmin as UnfoldModelAdmin
@@ -1023,7 +1027,6 @@ def test_every_sidebar_model_is_themed_and_searchable():
             continue
         assert isinstance(model_admin, UnfoldModelAdmin), f"{opts} is not themed"
         assert model_admin.search_fields, f"{opts} has no search box"
-        assert model_admin.list_filter, f"{opts} has no filters"
 
 
 # --- Environment-aware URLs ------------------------------------------------
@@ -1147,3 +1150,132 @@ def test_the_public_pages_render_their_tokens_inline():
         body = Client().get(path).content.decode()
         assert f"--accent: {LIGHT['accent']}" in body, f"{path} lost its tokens"
         assert "{%" not in body and "{#" not in body, f"{path} leaked a template tag"
+
+
+# --- Rows per page ---------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_default_page_size_is_small_enough_to_paginate():
+    """Unfold's 100 meant most lists had exactly one page, which made the pagination
+    controls decorative. 24 fills a screen and leaves the paging meaningful."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+
+    from core.paging import DEFAULT_PAGE_SIZE
+
+    assert DEFAULT_PAGE_SIZE == 24
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    for model, model_admin in django_admin.site._registry.items():
+        opts = model._meta
+        assert f"/admin/{opts.app_label}/{opts.model_name}/" in listed, f"{opts} is unlisted"
+        assert model_admin.list_per_page == DEFAULT_PAGE_SIZE, f"{opts} opted out"
+
+
+@pytest.mark.django_db
+def test_choosing_a_page_size_sticks_across_tables():
+    """A page size is a property of how you read a table, not of the table — so it is stored
+    once, per operator, and every list follows it."""
+    from django.contrib.auth import get_user_model
+
+    from core.paging import SESSION_KEY
+
+    staff = get_user_model().objects.create_superuser(
+        "pager", "pager@example.com", "Zephyr-Vault-92"
+    )  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    client.get("/admin/auth/user/?per_page=96")
+    assert client.session[SESSION_KEY] == 96
+    # A different model entirely, with no parameter of its own.
+    other = client.get("/admin/core/profile/")
+    assert other.context["cl"].list_per_page == 96
+
+
+@pytest.mark.django_db
+def test_a_junk_page_size_falls_back_instead_of_breaking_the_page():
+    """The value arrives in a URL anyone can edit or a stale bookmark can carry. A broken
+    page size must never be able to break the page."""
+    from django.contrib.auth import get_user_model
+
+    from core.paging import DEFAULT_PAGE_SIZE
+
+    staff = get_user_model().objects.create_superuser("junk", "junk@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    for bad in ("nonsense", "-5", "99999", ""):
+        response = client.get(f"/admin/auth/user/?per_page={bad}")
+        assert response.status_code == 200, f"{bad!r} broke the changelist"
+        assert response.context["cl"].list_per_page == DEFAULT_PAGE_SIZE
+
+
+@pytest.mark.django_db
+def test_the_page_size_is_not_treated_as_a_filter():
+    """Anything in the query string the admin doesn't recognise is treated as a field
+    lookup, so without stripping this one, ?per_page=48 raised IncorrectLookupParameters —
+    the admin's error page — instead of paginating."""
+    from django.contrib.auth import get_user_model
+
+    staff = get_user_model().objects.create_superuser("filt", "filt@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    response = client.get("/admin/auth/user/?per_page=48&is_staff__exact=1")
+    assert response.status_code == 200
+    assert response.context["cl"].list_per_page == 48
+
+
+@pytest.mark.django_db
+def test_switching_size_keeps_the_search_and_drops_the_page_number():
+    """Losing your filters because you asked for more rows would make the control worse than
+    useless. The page number goes, though: page 7 of a 24-row list is not page 7 of a 96."""
+    from django.contrib.auth import get_user_model
+
+    staff = get_user_model().objects.create_superuser("keep", "keep@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    body = client.get("/admin/auth/user/?q=demo&p=3").content.decode()
+    i = body.find("changelist-page-size")
+    control = body[i : i + 800]
+    assert "q=demo" in control, "the search was dropped"
+    assert "p=3" not in control, "the page number was carried over"
+
+
+@pytest.mark.django_db
+def test_the_caption_matches_the_rows_actually_on_the_page():
+    """The caption is computed from cl.result_list, and this asserts that against the rows
+    the page really renders — the two disagreeing is exactly the bug that looks like the
+    admin lying to you about what it is showing."""
+    import re
+
+    from django.contrib.auth import get_user_model
+
+    from chat.models import LLMCredential
+
+    staff = get_user_model().objects.create_superuser("cap", "cap@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    for i in range(30):
+        LLMCredential.objects.create(provider="mistral", label=f"k{i}", api_key=f"sk-{i}")
+
+    client = Client()
+    client.force_login(staff)
+    body = client.get("/admin/chat/llmcredential/?per_page=24").content.decode()
+
+    rows = body.count('class="data-row')
+    caption = re.search(r'changelist-total">([^<]+)', body).group(1)
+    caption = " ".join(caption.split())
+
+    assert rows == 24, f"page rendered {rows} rows"
+    assert caption == "Showing 1 to 24 of 30 API credentials", caption
+
+    # Second page: the range moves, the total does not.
+    body = client.get("/admin/chat/llmcredential/?per_page=24&p=2").content.decode()
+    caption = " ".join(re.search(r'changelist-total">([^<]+)', body).group(1).split())
+    assert body.count('class="data-row') == 6
+    assert caption == "Showing 25 to 30 of 30 API credentials", caption

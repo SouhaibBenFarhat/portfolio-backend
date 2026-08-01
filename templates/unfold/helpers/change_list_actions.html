@@ -1,0 +1,29 @@
+{% load admin_list %}
+{% comment %}
+Overrides unfold/helpers/change_list_actions.html.
+
+Unfold renders the bulk-action bar as a FIXED element pinned to the bottom of the viewport,
+which put it on top of the sticky save bar — two bars in the same place, the Save button
+half-visible behind the other. Hiding one while the other showed was the first attempt and it
+was wrong too: they are not alternatives, they are both "things you can do to this list".
+
+So the wrapper is now plain: no fixed positioning, no viewport pinning, no left offset
+tracking the sidebar. It renders wherever it is placed — which is inside the save bar in
+admin/change_list.html, alongside Save. One bar, both controls, nothing overlapping.
+
+Kept: `group-has-[input.action-select:checked]:flex`, which is how it stays hidden until a
+row is actually selected, and `#changelist-actions-wrapper`, which Unfold's own scripts and
+styles reference.
+{% endcomment %}
+
+{% if actions_on_top %}
+    {% if cl.search_fields or action_form or cl.has_filters %}
+        <div class="hidden group-has-[input.action-select:checked]:flex grow items-center">
+            <div id="changelist-actions-wrapper" class="grow group changelist-actions">
+                {% if action_form %}
+                    {% admin_actions %}
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+{% endif %}

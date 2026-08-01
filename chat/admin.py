@@ -31,6 +31,8 @@ from unfold.widgets import (
     UnfoldBooleanWidget,
 )
 
+from core.paging import PageSizeAdminMixin
+
 from .agent import context_limit
 from .extraction import MAX_UPLOAD_BYTES, content_type_for, extract_text
 from .models import ChatModel, Conversation, Document, Fact, LLMCredential, Message, TokenUsage
@@ -100,7 +102,7 @@ class LLMCredentialAdminForm(forms.ModelForm):
 
 
 @admin.register(LLMCredential)
-class LLMCredentialAdmin(ModelAdmin):
+class LLMCredentialAdmin(PageSizeAdminMixin, ModelAdmin):
     form = LLMCredentialAdminForm
     list_display = ("provider", "label", "masked_key", "is_active", "updated_at")
     list_filter = ("provider", "is_active")
@@ -139,7 +141,7 @@ class ChatModelAdminForm(forms.ModelForm):
 
 
 @admin.register(ChatModel)
-class ChatModelAdmin(ModelAdmin):
+class ChatModelAdmin(PageSizeAdminMixin, ModelAdmin):
     """The chat's failover chain. Drag the rows into order and press Save: the top
     active model answers every turn, and the ones under it are tried in order when it
     fails. An empty list falls back to the CHAT_MODEL/CHAT_FALLBACK_MODEL env vars.
@@ -197,7 +199,7 @@ class ChatModelAdmin(ModelAdmin):
 
 
 @admin.register(Fact)
-class FactAdmin(ModelAdmin):
+class FactAdmin(PageSizeAdminMixin, ModelAdmin):
     # Owner leads the columns and the filters: with more than one tenant, "which salary
     # expectation is this?" is the first question every row raises.
     list_display = ("question", "owner", "category", "is_active", "updated_at")
@@ -260,7 +262,7 @@ class DocumentAdminForm(forms.ModelForm):
 
 
 @admin.register(Document)
-class DocumentAdmin(ModelAdmin):
+class DocumentAdmin(PageSizeAdminMixin, ModelAdmin):
     form = DocumentAdminForm
     list_display = ("title", "owner", "slug", "has_file", "is_active", "updated_at")
     list_filter = ("owner", "is_active")
@@ -358,7 +360,7 @@ class MessageInline(TabularInline):
 
 
 @admin.register(Conversation)
-class ConversationAdmin(ModelAdmin):
+class ConversationAdmin(PageSizeAdminMixin, ModelAdmin):
     list_display = ("id", "owner", "created_at", "updated_at", "rating_summary")
     # "=id" is an EXACT match, not icontains: a UUID column can't be searched with LIKE on
     # Postgres, so the usual prefix-free form would raise rather than find nothing. Searching
@@ -394,7 +396,7 @@ class ConversationAdmin(ModelAdmin):
 
 
 @admin.register(TokenUsage)
-class TokenUsageAdmin(ModelAdmin):
+class TokenUsageAdmin(PageSizeAdminMixin, ModelAdmin):
     """Read-only view of token consumption per model per month, with the share of the
     Mistral free-tier monthly ceiling used. Rows are written by the chat stream."""
 

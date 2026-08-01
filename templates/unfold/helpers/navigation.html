@@ -8,10 +8,23 @@ groups and eleven items that is a wall you read past rather than a thing you nav
 rail turns the top level into five targets you aim at, and the panel only ever shows one
 group's items.
 
-WHICH SECTION IS OPEN. Rendered server-side from the current URL: the one-line loop below
-prints the slug of the group holding the active page, or nothing, and `|| '<first>'` in the
-JavaScript then falls back to the first section — which is what opens the sidebar sensibly on
-pages that belong to no group, like the dashboard.
+WHICH SECTION IS OPEN. Rendered server-side from the current URL, matching EITHER a group's
+own index page or one of its model pages, then falling back to the first group.
+
+Both halves are needed. Item matching alone leaves every app index — the exact page a rail
+icon opens — matching nothing, so the panel fell back to the first group and appeared frozen:
+you clicked Core and kept looking at Chat. Matching the group link alone would miss every
+changelist. Neither is ambiguous now that one group means one app.
+
+`active` and `section` are separate on purpose. The panel always needs SOMETHING open, so it
+falls back to the first group; the rail highlight must not, or the dashboard — which belongs
+to no app — lights up Chat and claims you are somewhere you have not been. `active` stays
+empty there, and the logo takes the highlight instead, since that is the page you are on.
+
+Each rail icon opens its app's index page. That only works because the groups ARE the apps:
+one group per app, listing exactly what that app registers. An earlier version grouped by job
+instead, and then had nowhere honest to point — two groups shared an index, and clicking
+"Tenants" landed on a page headed "Core administration".
 
 Each rail icon is a LINK to its group's first page rather than a toggle. Clicking a top-level
 section should take you somewhere; a rail that only reveals a list costs two clicks to go
@@ -26,10 +39,12 @@ reliable route, and they match how the rest of the admin theme is already overri
 {% endcomment %}
 {% load i18n unfold %}
 
-<nav id="nav-sidebar-inner" class="pf-nav" x-data="{ section: '{% for group in sidebar_navigation %}{% has_nav_item_active group.items as has_active %}{% if has_active and group.items %}{{ group.title|slugify }}{% endif %}{% endfor %}' || '{{ sidebar_navigation.0.title|slugify }}' }">
+<nav id="nav-sidebar-inner" class="pf-nav" x-data="{ active: '{% for group in sidebar_navigation %}{% has_nav_item_active group.items as has_active %}{% if has_active or request.path == group.link %}{{ group.title|slugify }}{% endif %}{% endfor %}', section: '{% for group in sidebar_navigation %}{% has_nav_item_active group.items as has_active %}{% if has_active or request.path == group.link %}{{ group.title|slugify }}{% endif %}{% endfor %}' || '{{ sidebar_navigation.0.title|slugify }}' }">
 
     <div class="pf-rail">
-        <a href="{% url 'admin:index' %}" class="pf-rail-logo" aria-label="{% trans 'Dashboard' %}">
+        <a href="{% url 'admin:index' %}"
+           class="pf-rail-logo {% if request.path == '/admin/' %}is-active{% endif %}"
+           aria-label="{% trans 'Dashboard' %}">
             {% comment %}
             Empty on purpose. The tile is this element's background and the letter is drawn
             on its ::before as a mask over /favicon-glyph.svg — see .pf-rail-logo.
@@ -44,10 +59,15 @@ reliable route, and they match how the rest of the admin theme is already overri
                 reveals a list makes you click twice to go anywhere. The page it lands on
                 is active, so the panel opens on that group by itself.
                 {% endcomment %}
-                <a href="{% with first=group.items.0 %}{% if first.link_callback %}{{ first.link_callback }}{% else %}{{ first.link }}{% endif %}{% endwith %}"
+                {% comment %}
+                The group's own landing page when settings give it one, so the rail opens the
+                module rather than dropping you into whichever table happens to be listed
+                first. Falls back to that first item if a group has no link.
+                {% endcomment %}
+                <a href="{% if group.link %}{{ group.link }}{% else %}{{ group.items.0.link }}{% endif %}"
                    class="pf-rail-btn"
                    aria-label="{{ group.title }}"
-                   x-bind:class="section === '{{ group.title|slugify }}' && 'is-active'">
+                   x-bind:class="active === '{{ group.title|slugify }}' && 'is-active'">
                     <span class="material-symbols-outlined">{{ group.icon|default:"circle" }}</span>
                 </a>
             {% endif %}
@@ -70,7 +90,14 @@ reliable route, and they match how the rest of the admin theme is already overri
         <div class="pf-sections">
             {% for group in sidebar_navigation %}
                 {% if group.items %}
-                    <div class="pf-section" x-cloak x-show="section === '{{ group.title|slugify }}'">
+                    {% comment %}
+                    On a page inside an app, only that app's models. On the dashboard, which
+                    belongs to no app, every group — with its heading — so the panel mirrors
+                    what the page itself lists instead of guessing at one app.
+                    {% endcomment %}
+                    <div class="pf-section" x-cloak
+                         x-show="active ? section === '{{ group.title|slugify }}' : true">
+                        <h2 class="pf-section-title" x-show="!active">{{ group.title }}</h2>
                         <ol class="pf-items">
                             {% for item in group.items %}
                                 {% if item.has_permission %}
@@ -92,6 +119,13 @@ reliable route, and they match how the rest of the admin theme is already overri
             {% endfor %}
         </div>
 
-        {% include "unfold/helpers/navigation_user.html" %}
+        {% comment %}
+        Wrapped only to get a class on it. Unfold's own markup for the account strip has no
+        hook and no background, so it was panel-coloured and read as the last row of the list
+        rather than as the panel's base.
+        {% endcomment %}
+        <div class="pf-panel-foot">
+            {% include "unfold/helpers/navigation_user.html" %}
+        </div>
     </div>
 </nav>

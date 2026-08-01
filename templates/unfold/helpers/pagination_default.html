@@ -1,0 +1,12 @@
+{% comment %}
+Overrides unfold/helpers/pagination_default.html.
+
+Unfold renders one link per page. At 24 rows a page that is nine numbers for 210 rows, and a
+table with a few thousand rows would fill the toolbar with them. This shows the first page,
+the last, a window around where you are, and an ellipsis for the gaps — see the page_links
+tag in core/templatetags/theme.py, which leans on Django's own get_elided_page_range rather
+than inventing the arithmetic.
+{% endcomment %}
+{% load theme %}
+
+{% page_links %}

@@ -1,0 +1,22 @@
+{% comment %}
+Overrides unfold/helpers/pagination.html.
+
+Unfold's version is a full-width sticky bar: `lg:sticky lg:bottom-0`, a translucent
+`lg:bg-white/80`, a backdrop blur, a top border and a scroll fade. All of that is right for
+something pinned to the bottom of the page, and all of it is wrong now the pagination rides
+in the toolbar row instead — it drew a grey slab behind the page numbers.
+
+That was first fought in CSS, unsuccessfully, which is the lesson worth keeping: overriding
+six utility classes with `!important` is a race you can lose to specificity or the cascade's
+layer rules, and the markup is right there. Deleting the classes beats out-shouting them.
+
+Nothing else changes: `{% pagination cl %}` renders the same links Django's admin always
+did, and `{% element_classes 'pagination' %}` still applies so a ModelAdmin can style it.
+{% endcomment %}
+{% load admin_list unfold %}
+
+{% if cl %}
+    <div class="flex items-center {% element_classes 'pagination' %}">
+        {% pagination cl %}
+    </div>
+{% endif %}
