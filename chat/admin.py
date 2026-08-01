@@ -198,10 +198,13 @@ class ChatModelAdmin(ModelAdmin):
 
 @admin.register(Fact)
 class FactAdmin(ModelAdmin):
-    list_display = ("question", "category", "is_active", "updated_at")
+    # Owner leads the columns and the filters: with more than one tenant, "which salary
+    # expectation is this?" is the first question every row raises.
+    list_display = ("question", "owner", "category", "is_active", "updated_at")
     list_editable = ("is_active",)
-    list_filter = ("category", "is_active")
+    list_filter = ("owner", "category", "is_active")
     search_fields = ("question", "answer", "category")
+    list_select_related = ("owner",)  # one join instead of a query per row
 
 
 class DocumentAdminForm(forms.ModelForm):
@@ -225,7 +228,7 @@ class DocumentAdminForm(forms.ModelForm):
 
     class Meta:
         model = Document
-        fields = ["slug", "title", "upload", "remove_file", "content", "is_active"]
+        fields = ["owner", "slug", "title", "upload", "remove_file", "content", "is_active"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -259,11 +262,12 @@ class DocumentAdminForm(forms.ModelForm):
 @admin.register(Document)
 class DocumentAdmin(ModelAdmin):
     form = DocumentAdminForm
-    list_display = ("title", "slug", "has_file", "is_active", "updated_at")
-    list_filter = ("is_active",)
+    list_display = ("title", "owner", "slug", "has_file", "is_active", "updated_at")
+    list_filter = ("owner", "is_active")
+    list_select_related = ("owner",)
     search_fields = ("title", "content", "slug")
     prepopulated_fields = {"slug": ("title",)}
-    fields = ("slug", "title", "upload", "remove_file", "preview", "content", "is_active")
+    fields = ("owner", "slug", "title", "upload", "remove_file", "preview", "content", "is_active")
     readonly_fields = ("preview",)
 
     def get_queryset(self, request):
@@ -355,7 +359,7 @@ class MessageInline(TabularInline):
 
 @admin.register(Conversation)
 class ConversationAdmin(ModelAdmin):
-    list_display = ("id", "created_at", "updated_at", "rating_summary")
+    list_display = ("id", "owner", "created_at", "updated_at", "rating_summary")
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = [MessageInline]
 

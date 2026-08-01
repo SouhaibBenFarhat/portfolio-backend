@@ -295,6 +295,26 @@ CHAT_TEMPERATURE = float(os.getenv("CHAT_TEMPERATURE", "0.7"))
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME", "SouhaibBenFarhat")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
+# --- Tenancy --------------------------------------------------------------
+# The domain tenant pages hang off, so souhaib.hirees.me resolves to the tenant "souhaib".
+# Only the label directly under this domain counts, and only when the rest matches exactly —
+# so app.hirees.me and the onrender.com hostname resolve to nobody, and a host we don't
+# serve can't smuggle a handle in.
+TENANT_BASE_DOMAIN = os.getenv("TENANT_BASE_DOMAIN", "hirees.me")
+# The handle given to tenant #1 when ownership was introduced — the account that already
+# owned every document, fact and conversation on this instance. Read from the environment
+# rather than hardcoded in the migration for the same reason as the chat-model seed
+# (chat/migrations/0010): another instance running this code has a different first user,
+# and a migration that assumed ours would hand them a stranger's name.
+DEFAULT_TENANT_HANDLE = os.getenv("DEFAULT_TENANT_HANDLE", "souhaib")
+
+# Requests that name no tenant — the Astro portfolio posting to the apex host, or a local
+# curl — are answered as this handle. It is what keeps the public chat on
+# souhaibbenfarhat.github.io working unchanged now that conversations belong to someone.
+# Set it empty to make an unresolvable request a 404 instead, once every tenant reaches
+# their page through their own subdomain.
+FALLBACK_TENANT_HANDLE = os.getenv("FALLBACK_TENANT_HANDLE", DEFAULT_TENANT_HANDLE)
+
 # Fernet key for encrypting secrets at rest (LLM API keys stored in the admin).
 # Derived from SECRET_KEY so there's no separate env var to manage. Note: rotating
 # SECRET_KEY makes existing encrypted values unreadable (just re-enter the keys).

@@ -24,7 +24,9 @@ from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .agent import _provider_of, build_agents, context_limit, primary_model
+from core.tenancy import aresolve_tenant, display_name_for, resolve_tenant
+
+from .agent import _provider_of, build_agents, context_limit, primary_model, tenant_preamble
 from .guard import GUARD_BLOCK_MESSAGE, is_message_in_scope
 from .models import ChatModel, Conversation, LLMCredential, Message, RequestLog, TokenUsage
 from .serializers import (
@@ -111,7 +113,15 @@ class ConversationDetailView(APIView):
         "most recent 200) to rehydrate the chat widget after a page reload.",
     )
     def get(self, request, conversation_id):
-        conversation = Conversation.objects.filter(id=conversation_id).first()
+        # Scoped to the tenant whose page this request arrived on, as well as to the id.
+        # The unguessable UUID is still the access check; this stops a thread id from one
+        # tenant's page rehydrating on another's, which would show a stranger's transcript.
+        tenant = resolve_tenant(request)
+        conversation = (
+            Conversation.objects.filter(id=conversation_id, owner=tenant.user).first()
+            if tenant
+            else None
+        )
         if conversation is None:
             raise NotFound("conversation not found")
         # Take the most recent messages (bounded), then restore chronological order.
@@ -139,7 +149,10 @@ class ConversationDetailView(APIView):
     )
     def delete(self, request, conversation_id):
         # Messages cascade-delete via the Message.conversation FK (on_delete=CASCADE).
-        deleted, _ = Conversation.objects.filter(id=conversation_id).delete()
+        tenant = resolve_tenant(request)
+        deleted = 0
+        if tenant is not None:
+            deleted, _ = Conversation.objects.filter(id=conversation_id, owner=tenant.user).delete()
         if not deleted:
             raise NotFound("conversation not found")
         return Response(status=204)
@@ -170,7 +183,16 @@ class MessageRatingView(APIView):
     def put(self, request, conversation_id, message_id):
         body = MessageRatingRequestSerializer(data=request.data)
         body.is_valid(raise_exception=True)
-        message = Message.objects.filter(conversation_id=conversation_id, id=message_id).first()
+        tenant = resolve_tenant(request)
+        message = (
+            Message.objects.filter(
+                conversation_id=conversation_id,
+                conversation__owner=tenant.user,
+                id=message_id,
+            ).first()
+            if tenant
+            else None
+        )
         if message is None:
             raise NotFound("message not found")
         # 0 clears the rating; -1/1 are truthy and pass through. Stored as null when
@@ -256,18 +278,24 @@ async def _record_token_usage(model_id: str, input_tokens: int, output_tokens: i
         )
 
 
-async def _get_or_create_conversation(conversation_id) -> Conversation:
-    """Resume the conversation if the id is a known UUID, else start a new one."""
+async def _get_or_create_conversation(conversation_id, owner) -> Conversation:
+    """Resume this tenant's conversation if the id is a known UUID, else start a new one.
+
+    The owner is part of the lookup, not just of the create: a thread id carried over from
+    another tenant's page must not resume here. It reads as an unknown id and starts a
+    fresh thread, which is the same thing that happens after the free database is wiped —
+    a path the client already handles.
+    """
     if conversation_id:
         try:
             uuid.UUID(str(conversation_id))
         except (ValueError, TypeError):
             conversation_id = None
     if conversation_id:
-        existing = await Conversation.objects.filter(id=conversation_id).afirst()
+        existing = await Conversation.objects.filter(id=conversation_id, owner=owner).afirst()
         if existing:
             return existing
-    return await Conversation.objects.acreate()
+    return await Conversation.objects.acreate(owner=owner)
 
 
 @csrf_exempt
@@ -297,7 +325,15 @@ async def chat_stream(request):
     if len(message) > settings.CHAT_MAX_MESSAGE_LENGTH:
         return JsonResponse({"error": "message is too long"}, status=400)
 
-    conversation = await _get_or_create_conversation(payload.get("conversation_id"))
+    # Whose page is this? Resolved from the request host (or an explicit handle for callers
+    # with no subdomain), never from anything the model can reach — see core.tenancy. It
+    # decides which facts and documents exist for the rest of this turn.
+    tenant = await aresolve_tenant(request, payload.get("handle") or "")
+    if tenant is None:
+        return JsonResponse({"error": "no such page"}, status=404)
+    owner = tenant.user
+
+    conversation = await _get_or_create_conversation(payload.get("conversation_id"), owner)
 
     # The admin's ordered chain: its head answers, the rest are the failover order. Read
     # before the budget gate, which measures the thread against the head's context window.
@@ -322,6 +358,14 @@ async def chat_stream(request):
     ]
     history.append({"role": "user", "content": message})
     history = history[-settings.CHAT_MAX_HISTORY_MESSAGES :]
+    # Whose page this is, as a system line ahead of the thread. It sits outside the slice
+    # above deliberately: the trim drops the oldest messages, and the assistant forgetting
+    # whose portfolio it is standing on halfway through a long chat is exactly the bug that
+    # would produce. It is only what the model *calls* them — the data it can reach is
+    # fixed by the run config below, so a wrong name here is cosmetic, never a leak.
+    history = [
+        {"role": "system", "content": tenant_preamble(display_name_for(tenant), tenant.handle)}
+    ] + history
     await Message.objects.acreate(
         conversation=conversation, role=Message.Role.USER, content=message
     )
@@ -390,7 +434,16 @@ async def chat_stream(request):
             usage_model = head_model
             turn_model = ""  # the model on this attempt, named once it produces output
             try:
-                async for event in agent.astream_events({"messages": history}, version="v2"):
+                # The owner rides in the run config, which LangChain injects into every tool
+                # and keeps out of the schema the model sees — so the tools are scoped to
+                # this tenant and the model has no way to name a different one. See
+                # chat/tools.py for why the alternative (binding tools per tenant) would
+                # cost one cached agent per tenant.
+                async for event in agent.astream_events(
+                    {"messages": history},
+                    version="v2",
+                    config={"configurable": {"owner_id": owner.pk}},
+                ):
                     kind = event["event"]
                     if kind.startswith("on_chat_model_"):
                         # The prefixed id ("mistral/…") of the model on this attempt.

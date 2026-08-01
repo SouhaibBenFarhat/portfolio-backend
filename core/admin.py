@@ -15,7 +15,7 @@ from django.contrib.auth.models import Group, User
 from unfold.admin import ModelAdmin
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 
-from .models import OAuthCredential
+from .models import OAuthCredential, Profile
 
 admin.site.unregister(User)
 admin.site.unregister(Group)
@@ -73,3 +73,15 @@ class OAuthCredentialAdmin(ModelAdmin):
     def masked_secret(self, obj):
         secret = obj.secret or ""
         return f"…{secret[-4:]}" if len(secret) >= 4 else "····"
+
+
+@admin.register(Profile)
+class ProfileAdmin(ModelAdmin):
+    """The tenant list — one row per signed-in user, keyed by their public handle."""
+
+    list_display = ("handle", "user", "github_username", "is_published", "updated_at")
+    list_filter = ("is_published",)
+    list_editable = ("is_published",)
+    search_fields = ("handle", "user__email", "github_username")
+    list_select_related = ("user",)
+    readonly_fields = ("created_at", "updated_at")
