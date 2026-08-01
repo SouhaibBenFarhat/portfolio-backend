@@ -926,3 +926,15 @@ def test_signing_in_queues_no_message_the_dashboard_cannot_show():
     assert response["Location"] == settings.APP_URL, "must actually have signed in"
 
     assert "Successfully signed in" not in client.get("/signin").content.decode()
+
+
+# --- Admin branding --------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_admin_is_branded_as_the_product_not_the_repository():
+    """`portfolio-backend` is what this service is called in git and on Render. The person
+    who opens /admin is looking at hirees.me, and the sidebar should say so."""
+    body = Client().get("/admin/login/").content.decode()
+    assert "Hirees" in body
+    assert "portfolio-backend" not in body
