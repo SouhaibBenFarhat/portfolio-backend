@@ -370,18 +370,22 @@ div[class~="lg:scrollable-top"]::after {
 /* Inputs get the page tone — inset wells against the elevated surface —
  * instead of Unfold's bg-white / dark:bg-base-900 (which equals the card in
  * light mode and the page in dark mode). Disabled/readonly keep Unfold's own
- * dimmed treatment. */
-#main input[class~="border"]:not([type="checkbox"]):not([type="radio"]):not([disabled]):not([readonly]),
-#main textarea[class~="border"]:not([disabled]):not([readonly]),
-#main select[class~="border"]:not([disabled]) {
+ * dimmed treatment.
+ *
+ * The login form is on an unauthenticated layout, which has no #main — so the card is named
+ * alongside it rather than the rules being copied. :is() takes the highest specificity of its
+ * arguments, so both branches keep the id-level weight these rules were written with. */
+:is(#main, .pf-auth-card) input[class~="border"]:not([type="checkbox"]):not([type="radio"]):not([disabled]):not([readonly]),
+:is(#main, .pf-auth-card) textarea[class~="border"]:not([disabled]):not([readonly]),
+:is(#main, .pf-auth-card) select[class~="border"]:not([disabled]) {
   background-color: var(--pf-field) !important;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* Focus: the site's composer treatment — accent border, soft accent halo. */
-#main input[class~="border"]:focus:not([type="checkbox"]):not([type="radio"]),
-#main textarea[class~="border"]:focus,
-#main select[class~="border"]:focus {
+:is(#main, .pf-auth-card) input[class~="border"]:focus:not([type="checkbox"]):not([type="radio"]),
+:is(#main, .pf-auth-card) textarea[class~="border"]:focus,
+:is(#main, .pf-auth-card) select[class~="border"]:focus {
   border-color: var(--pf-focus) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-focus) 18%, transparent) !important;
   outline: none !important;
@@ -1205,4 +1209,40 @@ div:has(> #content-related) {
    than the bar, so without this the strip looked like it lifted off while the menu showed. */
 .pf-panel-foot > div > div[x-on\:click][class~="bg-base-100"] {
   background-color: color-mix(in srgb, var(--pf-ink) 6%, var(--pf-chip-bg)) !important;
+}
+
+/* ---- Unauthenticated pages (logout) -------------------------------------- */
+
+/* Unfold paints this layout's #page with `bg-white`, which in this theme is the SURFACE
+ * colour — so a surface card on it would be invisible. The page goes back to being the page,
+ * and the card sits on it like every other card in the admin. */
+body.login #page {
+  background-color: var(--pf-page) !important;
+}
+
+/* The same plane as the changelist cards and the recent-actions entries: surface, hairline,
+ * card shadow. No colours of its own — a card that picks its own values is a card that drifts
+ * out of the theme the first time the palette moves. */
+.pf-auth-card {
+  padding: 1.75rem;
+  background-color: var(--pf-surface);
+  border: 1px solid var(--pf-line);
+  border-radius: 12px;
+  box-shadow: var(--pf-shadow-md);
+}
+
+/* The mark on the sign-in and signed-out cards. partials/_logo.html is the site's drawing and
+ * paints itself from --accent / --on-accent — site tokens the admin never emits, so on their
+ * own the tile would come out unpainted. They are mapped here onto the rail's colours rather
+ * than the theme accent: the rail keeps ONE petrol across light and dark, so the mark you
+ * meet on the way in is the same mark you see on the rail once you are through. */
+.pf-auth-logo {
+  --accent: var(--pf-rail-bg);
+  --on-accent: var(--pf-rail-ink);
+  margin-bottom: 1.25rem;
+}
+.pf-auth-logo .logo {
+  display: block;
+  width: 2.5rem;
+  height: 2.5rem;
 }
