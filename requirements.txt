@@ -42,7 +42,13 @@ python-docx>=1.1
 # Modern admin theme (Tailwind-based). It swaps admin.site for its own themed
 # AdminSite; assets ship in the package, are collected by collectstatic, and are
 # served by whitenoise — no CDN.
-django-unfold>=0.100
+#
+# PINNED EXACTLY, and it has to stay that way. The admin theme is nine forked templates and
+# ~1000 lines of CSS hooked onto names Unfold owns — template paths, element ids, utility
+# class names — none of which is a public API. A range let a rebuild upgrade this silently,
+# and the breakage is silent too: the page still returns 200, it just stops being styled.
+# Move the pin deliberately, then run core/test_unfold_contract.py and read what it says.
+django-unfold==0.100.0
 
 # REST framework + OpenAPI schema generation. drf-spectacular introspects the DRF
 # views/serializers to produce the OpenAPI 3 spec served at /api/schema/ and rendered
