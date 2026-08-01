@@ -308,13 +308,6 @@ TENANT_BASE_DOMAIN = os.getenv("TENANT_BASE_DOMAIN", "hirees.me")
 # and a migration that assumed ours would hand them a stranger's name.
 DEFAULT_TENANT_HANDLE = os.getenv("DEFAULT_TENANT_HANDLE", "souhaib")
 
-# WHICH account becomes tenant #1. Set this before deploying the ownership migration: the
-# fallback is "the earliest superuser", and the earliest superuser is not reliably the right
-# person — a preview or throwaway admin created during setup usually has a lower id than the
-# real one, and it would then own every document, fact and conversation on the instance, and
-# be named to every visitor as whose page it is. An email is the safe way to say who.
-DEFAULT_TENANT_EMAIL = os.getenv("DEFAULT_TENANT_EMAIL", "")
-
 # Requests that name no tenant — the Astro portfolio posting to the apex host, or a local
 # curl — are answered as this handle. It is what keeps the public chat on
 # souhaibbenfarhat.github.io working unchanged now that conversations belong to someone.

@@ -54,13 +54,6 @@ services:
         sync: false
       - key: ZAI_API_KEY # secret — Z.ai, for the GLM models (glm-4.7-flash is free)
         sync: false
-      # Which account the ownership migration (core/0005) hands every existing document,
-      # fact and conversation to, and names to visitors as whose page they are on. Set the
-      # real value in the dashboard BEFORE this first deploys: unset, it falls back to "the
-      # earliest superuser", which on a box that ever had a preview or setup admin is the
-      # wrong person — and that account would then own everything. See docs/tenancy.md.
-      - key: DEFAULT_TENANT_EMAIL
-        sync: false
       - key: GITHUB_USERNAME
         value: "SouhaibBenFarhat"
       - key: GITHUB_TOKEN # optional secret — lifts the GitHub API rate limit

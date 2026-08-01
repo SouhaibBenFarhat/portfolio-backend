@@ -76,11 +76,20 @@ Three migrations, in order:
 
 1. `chat/0013_…` adds the nullable `owner` columns and swaps `Document.slug`'s global
    uniqueness for `unique_document_per_owner`.
-2. `core/0005_backfill_tenant_one` creates a profile for the earliest superuser and assigns
-   every existing row to them, published. The handle comes from
-   `settings.DEFAULT_TENANT_HANDLE`, **not** a literal — the same reasoning as
-   `chat/migrations/0010_seed_chat_models`: another instance running this code has a
-   different first user, and a migration that assumed ours would hand them a stranger's name.
+2. `core/0005_backfill_tenant_one` creates a profile for the **earliest staff account** and
+   assigns every existing row to it, published. Staff rather than superuser, and rather
+   than any account: every document and fact here was created through `/admin`, and
+   `/admin` requires `is_staff` — so the account that manages the content is the one that
+   owns it, and a visitor who signed in through the public flow can never be picked.
+   It is a guess and it can miss — a setup admin made early enough has a lower id than the
+   real owner. An explicit `DEFAULT_TENANT_EMAIL` setting was written and then dropped as
+   more ceremony than the problem deserves: this runs **once**, on a database whose accounts
+   you can read beforehand. If it does pick wrong the fix is a reassignment, not a rollback —
+   repoint `owner_id` on the three tables and move the `Profile` with it.
+   The handle comes from `settings.DEFAULT_TENANT_HANDLE`, **not** a literal, on the same
+   reasoning as `chat/migrations/0010_seed_chat_models`: another instance running this code
+   has a different first account, and a migration that assumed ours would hand them a
+   stranger's name.
 3. `chat/0014_require_owner` makes the columns `NOT NULL`. Hand-written, because
    `makemigrations` can only offer to invent a default for rows that 0005 has already filled.
 

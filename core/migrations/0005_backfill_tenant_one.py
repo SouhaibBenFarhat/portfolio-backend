@@ -19,26 +19,25 @@ from django.db import migrations
 
 
 def _first_account(User):
-    """Which account becomes tenant #1.
+    """Which account becomes tenant #1: the earliest staff account.
 
-    `DEFAULT_TENANT_EMAIL` first, and it is worth setting. "The earliest superuser" reads
-    like the instance owner but often isn't: a preview or throwaway admin made while setting
-    the box up usually has a lower id than the real account, and picking it would hand that
-    account every document, fact and conversation — and then name it to every visitor as
-    whose page they are on. Verified on a copy of the development database, where exactly
-    that happened.
+    Staff rather than superuser, and rather than any account at all, because every document
+    and fact on this instance was created through `/admin`, and `/admin` requires `is_staff`.
+    The account that has been managing the content is the account that owns it. A visitor
+    who signed in through the public flow has no staff flag and can't be the answer.
 
-    Falls back to the earliest superuser, then to the earliest account of any kind, so an
-    instance whose first user was never promoted still gets its rows assigned rather than
-    silently orphaning them.
+    This is a guess, and it is worth knowing it can miss: a preview or setup admin made
+    early enough would have a lower id than the real owner and would inherit everything.
+    An explicit setting was tried and dropped as more ceremony than the problem deserves —
+    the migration runs once, on a database whose accounts you can read before deploying.
+    If it does pick wrong, the fix is a reassignment, not a rollback: point `owner_id` at
+    the right user on the three tables and move the Profile with it.
+
+    Falls back to the earliest account of any kind, so an instance whose first user was
+    never made staff still gets its rows assigned rather than silently orphaning them.
     """
-    email = (settings.DEFAULT_TENANT_EMAIL or "").strip()
-    if email:
-        chosen = User.objects.filter(email__iexact=email).order_by("id").first()
-        if chosen is not None:
-            return chosen
     return (
-        User.objects.filter(is_superuser=True).order_by("id").first()
+        User.objects.filter(is_staff=True).order_by("id").first()
         or User.objects.order_by("id").first()
     )
 
