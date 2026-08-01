@@ -15,18 +15,89 @@
   /* Page and field planes are literals, NOT base tokens: Unfold reuses base-50 /
    * base-950 internally for zebra stripes and hover tints, so tying the page to
    * them makes every other table row page-colored. */
-  --pf-page: #f6f1e8; /* warm page, one clear step below the white surfaces */
+  --pf-page: #f4f4f7; /* warm page, one clear step below the white surfaces */
   --pf-surface: #ffffff; /* the site's --surface */
   /* One step above the surface — elevation is a tone step, not a shadow.
    * White is the light-mode ceiling, so raised bars tint gently toward the page. */
-  --pf-surface-raised: #fbf9f5;
-  --pf-field: #f3eee4; /* fields as inset wells */
+  --pf-surface-raised: #fafafc;
+  --pf-field: #f0f0f4; /* fields as inset wells */
   --pf-line: var(--color-base-200);
+  /* A hairline for edges that separate planes rather than enclose them. */
+  --pf-line-soft: color-mix(in srgb, var(--pf-line) 28%, transparent);
+  /* The fade over content that scrolls under a sticky bar. */
+  --pf-fade: color-mix(in srgb, var(--pf-ink) 7%, transparent);
+  /* Its own value, well under --pf-fade: that one is an inset shadow inside a small
+   * control, this one is a band across the full width of the page, and the same
+   * alpha that reads as depth in a 2px well reads as a bruise at 200px wide. */
+  --pf-scroll-fade: color-mix(in srgb, var(--pf-ink) 2%, transparent);
+  /* USE THIS, NOT --pf-line, FOR ANY LINE DRAWN ON A SURFACE. --pf-line is sized to part
+   * a card from the PAGE; on a surface it disappears, and that was got wrong three times —
+   * the sidebar edge, the search divider, and the table header.
+   *
+   * A SOLID value, not a mix into transparent. Alpha was the first attempt and it is the
+   * wrong tool: what you actually see depends on whatever happens to be behind it, so the
+   * same token lands differently on every plane and there is no way to reason about the
+   * result without knowing the backdrop. Twice it was tuned until it looked right in one
+   * mode and vanished in the other.
+   *
+   * These are chosen by CONTRAST DISTANCE from the surface they sit on — 1.32:1 against
+   * #ffffff, 1.49:1 against #1e242e. Dark needs the larger number because a 1px light line
+   * on a dark ground loses more than any lightness formula predicts; those model flat
+   * patches, not hairlines. Measure against the surface, don't mix and hope. */
+  --pf-divider: #e0e0e5;
+  /* The header band. A solid value measured against the ROW it sits above, for the same
+   * reason the divider is: it was a 70% mix toward the raised plane, which resolved to
+   * #fbfbfd on a white row — a ratio of 1.03, i.e. nothing, so the header read as another
+   * data row. Light needs less than dark to look the same, so the two are not equal
+   * numbers; they are equal-looking ones. */
+  --pf-thead-bg: #eeeff3;  /* 1.15:1 against the row */
+  --pf-overlay-bg: #eef0f4;  /* a bar floating OVER the table: down, not up */
+  --pf-shadow-panel:
+    1px 0 2px color-mix(in srgb, var(--pf-ink) 4%, transparent),
+    4px 0 12px color-mix(in srgb, var(--pf-ink) 5%, transparent);
+  /* The same shadow thrown upward, for a bar that sits at the bottom of a surface. */
+  --pf-shadow-up:
+    0 -1px 2px color-mix(in srgb, var(--pf-ink) 4%, transparent),
+    0 -4px 12px color-mix(in srgb, var(--pf-ink) 5%, transparent);
   --pf-accent: var(--color-base-600);
   --pf-focus: var(--color-primary-600); /* site --accent in light mode */
   /* The site's --shadow-sm / --shadow-md (cards only — bars elevate by tone) */
   --pf-shadow-sm: 0 1px 2px rgba(22, 24, 29, 0.04), 0 1px 3px rgba(22, 24, 29, 0.06);
   --pf-shadow-md: 0 2px 4px rgba(22, 24, 29, 0.05), 0 6px 16px rgba(22, 24, 29, 0.08);
+  /* Ink, taken from the font tokens settings.UNFOLD["COLORS"]["font"] emits — which are
+   * the site's own --text and --muted. Aliased here so a rule can say "the ink" once
+   * instead of picking the light or dark variant at every call site. */
+  --pf-ink: var(--color-font-default-light);
+  --pf-muted: var(--color-font-subtle-light);
+  /* What sits ON the accent. primary-50 rather than white: it is the top of the same
+   * ramp the rail is filled from, so the two were chosen together. */
+  --pf-on-accent: var(--color-primary-50);
+  /* The rail's own elevation — thrown sideways onto the panel, which no other shadow
+   * here does, and tinted with the deepest petrol so it reads as the rail's shadow
+   * rather than a grey smudge. */
+  --pf-shadow-rail:
+    2px 0 4px color-mix(in srgb, var(--color-primary-950) 22%, transparent),
+    6px 0 16px color-mix(in srgb, var(--color-primary-950) 16%, transparent);
+  --pf-rail-bg: var(--color-primary-600);
+  --pf-rail-ink: var(--pf-on-accent);
+  --pf-rail-ink-dim: color-mix(in srgb, var(--pf-on-accent) 66%, transparent);
+  --pf-rail-line: color-mix(in srgb, var(--color-primary-950) 40%, transparent);
+  /* A tooltip sits ON the surface it explains, so it cannot BE that surface — built from
+   * --pf-surface it came out white on a white panel. A dark chip gives 15.6:1 against the
+   * light panel, which is what a floating label needs. */
+  /* The plane both floating chips in the panel sit on: the command-palette trigger at the
+   * top and the account chip at the bottom. A real tone step is what makes them read as
+   * another plane — a shadow only feathers an edge, and --pf-overlay-bg at 1.14:1 was too
+   * small a move to see. Both values come from the scale: no new literals, and they track a
+   * retheme. Sharing one token is also what keeps the two chips identical by construction
+   * rather than by two values that happen to match today. */
+  --pf-chip-bg: var(--color-base-200);  /* 1.27:1 against the white panel */
+  /* The avatar chip, lifted off that bar. Unfold fills it with base-200 / base-700 — the very
+   * values the bar now uses — so it sat at 1.00:1 and was outlined only by its inset ring. */
+  --pf-avatar-bg: var(--pf-surface);  /* 1.27:1 against the bar */
+  --pf-tooltip-bg: var(--color-base-900);
+  --pf-tooltip-ink: var(--color-base-50);
+  --pf-tooltip-line: var(--color-base-700);
 }
 .dark {
   --pf-page: #13171e; /* dark page, one clear step below the surfaces */
@@ -34,9 +105,36 @@
   --pf-surface-raised: #272e3a; /* one step above the surface */
   --pf-field: #10141a; /* inset wells, slightly below the page */
   --pf-line: var(--color-base-800);
+  --pf-line-soft: color-mix(in srgb, var(--pf-line) 32%, transparent);
+  --pf-fade: color-mix(in srgb, var(--color-base-950) 55%, transparent);
+  --pf-scroll-fade: color-mix(in srgb, var(--color-base-950) 9%, transparent);
+  --pf-divider: #39404c;  /* 1.49:1 against the dark surface — see the light note */
+  --pf-thead-bg: #313846;  /* 1.33:1 against the row */
+  --pf-overlay-bg: #313846;  /* dark has room above, so it goes up */
+  /* Dark needs a touch more, since a shadow has less room to read. */
+  --pf-shadow-panel:
+    1px 0 2px color-mix(in srgb, var(--color-base-950) 45%, transparent),
+    4px 0 14px color-mix(in srgb, var(--color-base-950) 40%, transparent);
+  --pf-shadow-up:
+    0 -1px 2px color-mix(in srgb, var(--color-base-950) 45%, transparent),
+    0 -4px 14px color-mix(in srgb, var(--color-base-950) 40%, transparent);
   --pf-focus: var(--color-primary-500); /* site --accent in dark mode */
   /* Slightly heavier than the site's light shadows, but soft — the tone step
    * and borders carry the separation; the shadow only feathers the edge. */
+  --pf-ink: var(--color-font-default-dark);
+  --pf-muted: var(--color-font-subtle-dark);
+  /* The rail keeps ONE colour across themes (see .pf-rail), so --pf-rail-* are not
+   * restated here — only the surfaces beneath the tooltip change. */
+  /* --pf-surface-raised measured 1.14:1 against the panel behind it — the chip dissolved
+   * into the sidebar. base-700 gives 1.83:1 and still carries the ink at 7:1, so the label
+   * reads and the chip reads as a separate object. */
+  --pf-chip-bg: var(--color-base-700);  /* 1.49:1 against the dark panel */
+  /* Capped by the initial inside it: base-500 would step 2.71:1 off the bar but drop the
+   * letter to 3.2:1. base-600 keeps it at 5.1:1. */
+  --pf-avatar-bg: var(--color-base-600);  /* 1.68:1 against the bar */
+  --pf-tooltip-bg: #454d5c;
+  --pf-tooltip-ink: var(--pf-ink);
+  --pf-tooltip-line: var(--color-base-600);
   --pf-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.25);
   --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
@@ -65,7 +163,21 @@ body,
  * same way once you scroll). */
 #nav-sidebar-inner {
   background-color: var(--pf-surface) !important;
-  border-right: 1px solid var(--pf-line);
+}
+/* The sidebar has TWO right edges: this wrapper carries Unfold's own `border-r
+ * border-base-200`, and #nav-sidebar-inner sits inside it. Softening only the inner one
+ * changed nothing visible, because the line you actually see is this one — and having
+ * both drew 2px. The inner border is gone; this one is a hairline.
+ *
+ * !important because `border-r` is an Unfold utility class setting the same property,
+ * which is the only case this file uses it for. */
+#nav-sidebar {
+  border-right-color: var(--pf-line-soft) !important;
+  /* The panel is a surface lifted off the page, so it casts to the right the way the rail
+   * casts onto it — the same story told twice, at half the strength each step out. Mixed
+   * from the ink rather than a fixed black, so it stays a shadow in dark mode instead of
+   * a black bar against a nearly-black page. */
+  box-shadow: var(--pf-shadow-panel);
 }
 /* The header is two nested bands (#header-inner inside a bg-white/base-900
  * wrapper) — paint both, or the wrapper shows as a second header behind it.
@@ -74,6 +186,13 @@ body,
 #main div[class~="bg-white"]:has(#header-inner) {
   background-color: var(--pf-page) !important; /* one step under the surface */
   border-bottom-color: transparent;
+}
+/* Head room above the breadcrumb. Unfold starts it hard against the top of the viewport,
+   which leaves the page title and the primary "+ Add" button crammed into the edge — the
+   first thing you read on every page, with nothing above it. */
+#header-inner {
+  padding-top: 1.25rem !important;
+  padding-bottom: 0.5rem !important;
 }
 
 /* The sidebar's logo block: no divider, elevated one tone step. */
@@ -84,32 +203,159 @@ body,
   background-color: var(--pf-surface-raised);
 }
 
-/* Bottom bars (the account block in the sidebar, the actions bar in #main):
- * no border-top, elevated one tone step. */
-#nav-sidebar div[class~="border-t"] {
-  border-top-color: transparent;
-  background-color: var(--pf-surface-raised);
-}
+/* The account strip used to be painted here, by `#nav-sidebar div[class~="border-t"]`. That
+ * selector was wrong twice over: it also caught the separator inside the account dropdown,
+ * and being id-based it outranked every later, more specific attempt to restyle the strip —
+ * so a fill written for `.pf-panel-foot` simply never appeared. The strip now has its own
+ * class and owns its own colour; see .pf-panel-foot at the end of this sheet. */
 
 /* The sticky footer action bar is a translucent blur (bg-white/80 or
  * base-900/80) directly over the page; one step under the sidebar bars. */
 #main div[class~="lg:backdrop-blur-xs"] {
   background-color: var(--pf-surface) !important;
 }
+/* The fade above the sticky save bar. Not a box-shadow — Unfold draws it as a ::after
+ * gradient running from --color-base-100, which on the warm base scale is #eee8da: a
+ * solid tint, and against a white surface it reads as a smudge rather than a hint that
+ * content continues underneath. Rebuilt from the ink at low alpha, and shortened, so it
+ * says "there is more below" without drawing attention to itself. */
+/* NOT scoped to #main: the changelist's pagination bar uses the same class and sits in
+ * base.html's footer block, outside it. Scoped, this softened the change form's save bar
+ * and left every table's footer at full strength. */
+div[class~="lg:scrollable-top"]::after {
+  height: 0.5rem !important;
+  background-image: linear-gradient(to top, var(--pf-scroll-fade), transparent) !important;
+}
 
 /* Column headers sit on the surface; tint them one step toward the page so
  * the table reads as rows-on-a-card, not floating text. */
+/* The header labels the rows, so it cannot be the plane BELOW them — that inverts what
+ * contains what, and it was sitting in a well while the rows floated above it. It tints
+ * UP toward the toolbar instead, continuing the strip it hangs off.
+ *
+ * The tint is small on purpose. Elevation is for things that overlap, and this header does
+ * not; what separates it from a data row is type and a firm bottom edge, not tone. Left on
+ * the rows' exact plane it simply read as another row. */
 #result_list thead th {
-  background-color: color-mix(in srgb, var(--pf-field) 55%, var(--pf-surface));
+  background-color: var(--pf-thead-bg);
+  border-bottom: 1px solid var(--pf-divider) !important;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+}
+/* Unfold puts the sort link inside the cell, so the type rules have to reach it too. */
+#result_list thead th a {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
-/* The changelist toolbar strip (search + filters) sits one step above the card. */
+/* The search and filter controls belong to the PAGE, not to the table. Unfold builds them
+ * as a bordered card whose bottom the table then overlaps — `lg:-mb-8` pulls the result
+ * list up into the toolbar's own `lg:pb-11` — which welds the two into one object and
+ * makes the controls read as part of the data. They act ON the table; they are not in it.
+ *
+ * So: no surface, no border, no padding, and the overlap replaced by real distance. The
+ * negative margin is the load-bearing part — remove only the border and the table still
+ * climbs into the gap.
+ *
+ * One row: the search takes the space and the filter button sits immediately to its right,
+ * sized to its own text. Unfold's own layout only reaches that at `sm:` and then pushes the
+ * button to the far edge with `lg:ml-auto`, which reads as two unrelated controls rather
+ * than a search and its modifier. */
 #changelist div:has(> #toolbar) {
-  background-color: var(--pf-surface-raised);
+  background-color: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  margin-bottom: 1.5rem !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0.75rem !important;
+}
+/* Neither child grows or shrinks: both take their natural width and sit at the left, with
+ * the rest of the row empty.
+ *
+ * Do NOT put a width on #toolbar. The search box inside it is `lg:w-96` — a fixed 24rem —
+ * so a smaller flex-basis on the parent makes the child overflow it and run under the
+ * filter button. Letting the wrapper size to its content is what keeps them apart. */
+#changelist div:has(> #toolbar) > * {
+  flex: 0 0 auto;
+}
+/* Beside the search, not banished to the far edge: the button carries `lg:ml-auto`.
+ * The pagination is excluded — it is the one thing in this row that SHOULD sit right, and
+ * this rule was quietly cancelling its auto margin. */
+#changelist div:has(> #toolbar) > *:not(:first-child):not(.changelist-pagination-inline) {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+/* Data rows are uniform — no zebra. Every row sits flat on the surface; only
+ * hover gets a whisper of the accent so the pointer still has feedback.
+ *
+ * They are already parted by a rule — Unfold puts `border-t` on every cell — and it was
+ * invisible in dark because that border is `base-800` (#222730) against a `#1e242e` row.
+ * So this RECOLOURS the border that exists rather than adding a second one underneath:
+ * adding `border-bottom` gave two lines per gap in light mode and still left the dark one
+ * unfixed, which is the wrong end of the problem entirely.
+ *
+ * Note the table is `border-separate`, and the separator lives on the TOP of each cell —
+ * not the bottom. Reading the markup would have saved two attempts at this. */
+#result_list tbody td,
+#result_list tbody th {
+  border-top-color: var(--pf-divider) !important;
+}
+/* The header's own border-bottom already parts it from the first row, and every cell carries
+   a border-top — so under the header the two sat one on top of the other and read as a 2px
+   rule. Unfold wraps EACH row in its own <tbody>, so the first row is `tbody:first-of-type`,
+   not `tr:first-child`. */
+#result_list tbody:first-of-type td,
+#result_list tbody:first-of-type th {
+  border-top: 0 !important;
+}
+/* The card's own border only rounds its BOTTOM — `lg:rounded-b-default`, from when the
+ * toolbar sat attached above it and squared the top off. The toolbar is detached now, so
+ * the table is a card in its own right and the border has to round all four corners, or
+ * the rounded header sits inside a square outline. */
+#changelist-form div[class~="lg:rounded-b-default"] {
+  border-radius: var(--border-radius, 6px) !important;
 }
 
-/* Data rows are uniform — no zebra. Every row sits flat on the surface; only
- * hover gets a whisper of the accent so the pointer still has feedback. */
+/* The header band closes the TOP of the card the same way the last row closes the bottom.
+ * The wrapper above the table carries no top radius at all — the toolbar used to sit in it
+ * — so without this the header's square corners sit proud of the rounded border. */
+#result_list thead th:first-child {
+  border-top-left-radius: var(--border-radius, 6px);
+}
+#result_list thead th:last-child {
+  border-top-right-radius: var(--border-radius, 6px);
+}
+
+/* The last row has to round off with the card. The wrapper does carry `lg:rounded-b-default`,
+ * but simplebar inserts its own scroll containers between it and the table, so the clip never
+ * reaches the cells and their square corners sit proud of the rounded edge. Rounding the two
+ * end cells is what actually meets the border.
+ *
+ * Unfold's radius is `var(--border-radius, 6px)`, so this follows any retheme rather than
+ * hardcoding 6px beside a token that could move. */
+#result_list tbody tr:last-child td:first-child,
+#result_list tbody tr:last-child th:first-child {
+  border-bottom-left-radius: var(--border-radius, 6px);
+}
+#result_list tbody tr:last-child td:last-child,
+#result_list tbody tr:last-child th:last-child {
+  border-bottom-right-radius: var(--border-radius, 6px);
+}
+
+/* The mobile layout stacks rows as bordered cards; same token, so they match. */
+#result_list tbody tr.data-row {
+  border-color: var(--pf-divider) !important;
+}
+
 #result_list tbody tr,
 #result_list tbody td,
 #result_list tbody th {
@@ -158,4 +404,805 @@ body,
 #result_list[data-ordering-field="order"] th.column-order,
 #result_list[data-ordering-field="order"] td.field-order {
   display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Two-column navigation: an icon rail, and a panel of the selected section.
+   Markup in templates/unfold/helpers/navigation.html, which overrides Unfold's.
+
+   Written as plain rules on our own class names rather than Tailwind utilities,
+   because Unfold ships a PREBUILT stylesheet: Tailwind only compiles the classes
+   it saw at build time, so an invented utility like `w-[56px]` is simply absent
+   from the bundle and does nothing at all. Same reason this whole file exists.
+
+   Colours come from the plane variables defined at the top of this file, so the
+   rail follows the theme without naming a single literal.
+   --------------------------------------------------------------------------- */
+
+[x-cloak] { display: none !important; }
+
+.pf-nav {
+  display: flex;
+  flex-direction: row;
+  /* A definite height, not a minimum. `min-height: 100vh` was the original, and a minimum
+     bounds nothing: with enough groups open the nav simply grew past the viewport and spilled
+     out of #nav-sidebar, so .pf-sections — which has had overflow-y: auto all along — was
+     never actually constrained and had nothing to scroll. The overflow has to be forced
+     somewhere, and this is the element that knows how tall it is allowed to be.
+
+     svh after vh so it wins where supported: on phones 100vh is the height with the browser
+     chrome RETRACTED, which is taller than what you can see, and the difference lands exactly
+     on the bottom of the list — the part you are scrolling to reach. */
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  background-color: var(--pf-surface);
+}
+
+/* ---- The rail ------------------------------------------------------------ */
+.pf-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  padding: 0.75rem 0;
+  /* The rail has as many icons as there are apps, so on a short screen it overflows too. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* Filled with the brand's petrol, so the top level is separated by colour rather than
+     by another tone of grey. That also sidesteps the light-mode ceiling: the panel beside
+     it is white and nothing can be raised above white, which is why tone alone could not
+     do this.
+
+     ONE colour in both themes, deliberately. The rail is the brand mark of the interface,
+     and a brand colour that changes with the operating system's theme stops being one. It
+     also means the white logo tile and the ink on it never need a second set of values.
+
+     Raised, not merely adjacent: the shadow falls to the right onto the panel, so the rail
+     reads as the layer on top. z-index is what lets it — without it the panel paints over
+     the shadow and the whole effect vanishes. */
+  position: relative;
+  z-index: 1;
+  background-color: var(--pf-rail-bg);
+  border-right: 1px solid var(--pf-rail-line);
+  box-shadow: var(--pf-shadow-rail);
+}
+
+/* The mark as a MASK, not an image: /favicon-glyph.svg is the bare letter with no tile,
+   and masking reads only its alpha, so the colour comes from `background-color` here and
+   flips with the theme. The tiled favicon would put a petrol square on a petrol bar and
+   vanish, and an <img> could never recolour itself. One drawing, two surfaces. */
+.pf-rail-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.625rem;
+  border-radius: 9px;
+  background-color: var(--pf-rail-ink);
+  box-shadow: var(--pf-shadow-sm);
+}
+/* The letter itself, masked so it takes the RAIL's colour and reads as cut out of the
+   tile. Drawn on ::before rather than on the link, because the link is now the tile —
+   one element can carry a background or a mask, not both. */
+.pf-rail-logo::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--pf-rail-bg);
+  -webkit-mask: url("/favicon-glyph.svg") center / 1.5rem 1.5rem no-repeat;
+  mask: url("/favicon-glyph.svg") center / 1.5rem 1.5rem no-repeat;
+}
+
+.pf-rail-btn {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pf-rail-ink-dim);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.pf-rail-btn:hover { color: var(--pf-rail-ink); background-color: color-mix(in srgb, var(--pf-rail-ink) 12%, transparent); }
+.pf-rail-btn.is-active { color: var(--pf-rail-ink); background-color: color-mix(in srgb, var(--pf-rail-ink) 20%, transparent); }
+/* The active section is named by colour and fill, not only by a marker, so it
+   still reads for anyone who can't separate the two accent tints. */
+.pf-rail-btn.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 1.5rem;
+  border-radius: 0 3px 3px 0;
+  background-color: var(--pf-rail-ink);
+}
+.pf-rail-btn { position: relative; }
+
+.pf-rail-close {
+  margin-top: auto;
+  color: var(--pf-rail-ink-dim);
+  cursor: pointer;
+}
+
+/* ---- The panel ----------------------------------------------------------- */
+.pf-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 0.75rem;
+}
+
+/* The command-palette trigger: a chip floating on the panel, the twin of the account chip at
+ * the other end. It was a sunken well before — --pf-field plus an inset shadow — which was
+ * right while it sat in a fixed band at the top of a static list, but the list scrolls now
+ * and the two edges met in a hard cut. A raised chip reads as something the content passes
+ * BEHIND, which is what is actually happening.
+ *
+ * Note the light mode does not get lighter: the panel is white and nothing rises above white,
+ * so the chip floats by radius, shadow and margin, and its tone steps DOWN. Dark has room and
+ * steps up. Same token as the account chip, so the two cannot drift apart.
+ *
+ * Unfold's wrapper inside this one carries mx-3 and mb-2.5. Both are zeroed and re-applied
+ * here, so one element owns the spacing rather than two adding up. */
+.pf-search {
+  margin: 0 0.75rem 0.625rem;
+}
+.pf-search > div {
+  margin: 0 !important;
+}
+
+.pf-search > div > div {
+  background-color: var(--pf-chip-bg) !important;
+  border-color: transparent !important;
+  border-radius: 10px !important;
+  box-shadow: var(--pf-shadow-sm) !important;
+}
+/* Every child of that control ships its own background — the placeholder div carries
+ * dark:bg-base-900 and the shortcut key bg-base-50 / dark:bg-white/[.04] — so the well
+ * came out banded: a dark strip behind the icon, a lighter one behind the text, another
+ * behind the key. One plane means clearing all of them and letting the well show through.
+ *
+ * The panel is also narrower now that the rail takes a slice of it, so the placeholder was
+ * truncating mid-word; tighter padding and a smaller face buy the words back. */
+.pf-search > div > div > * {
+  background-color: transparent !important;
+}
+.pf-search > div > div > div {
+  padding-block: 0.375rem !important;
+  font-size: 0.8125rem !important;
+}
+/* The key keeps an edge — it is a key — but a hairline one, and no fill of its own. */
+.pf-search kbd {
+  border-color: var(--pf-line-soft) !important;
+}
+.pf-search > div > div:focus-within {
+  border-color: var(--pf-focus) !important;
+}
+
+.pf-sections {
+  flex: 1 1 auto;
+  min-height: 0;  /* without this a flex child refuses to shrink below its content */
+  overflow-y: auto;
+  overscroll-behavior: contain;  /* reaching the end here must not start scrolling the page */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pf-line) transparent;
+  padding-block: 0.25rem 0.5rem;
+  /* Softens both ends of the scroll box so rows dissolve instead of being sliced at an
+     invisible edge. The container clips at an exact pixel and always did; what changed is
+     that the list now scrolls, so that edge became something you watch text cut across.
+     Short on purpose — just enough to take the hard edge off. A long ramp stops reading as a
+     soft edge and starts reading as rows that are greyed out. Slightly wider at the top,
+     where a row disappears behind the trigger chip, than at the bottom.
+
+     The black in the ramp is not a colour and needs no token — a mask reads only alpha, so
+     the stops mean "opaque" and "transparent", nothing more. */
+  --pf-mask: linear-gradient(
+    to bottom,
+    transparent 0,
+    rgb(0 0 0) 0.5rem,
+    rgb(0 0 0) calc(100% - 0.3125rem),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--pf-mask);
+  mask-image: var(--pf-mask);
+}
+
+.pf-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  list-style: none;
+}
+
+.pf-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 2.25rem;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color .15s ease, color .15s ease;
+}
+.pf-item:hover { background-color: color-mix(in srgb, var(--pf-focus) 6%, var(--pf-surface)); }
+.pf-item.is-active {
+  font-weight: 600;
+  color: var(--pf-focus);
+  background-color: color-mix(in srgb, var(--pf-focus) 12%, transparent);
+}
+.pf-item .material-symbols-outlined { flex: none; }
+
+/* Rail tooltips. The rail shows an icon and nothing else, so the name has to arrive on
+   hover — and the native `title` attribute is the wrong tool: it waits about a second,
+   can't be styled, and never appears on keyboard focus. This reads the accessible name
+   straight off aria-label, so there is one label serving both the tooltip and the screen
+   reader instead of two that can drift apart. */
+.pf-rail-btn::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: calc(100% + 0.625rem);
+  top: 50%;
+  transform: translateY(-50%) translateX(-2px);
+  z-index: 60;
+  padding: 0.4375rem 0.75rem;
+  border-radius: 6px;
+  background-color: var(--pf-tooltip-bg);
+  border: 1px solid var(--pf-tooltip-line);
+  color: var(--pf-tooltip-ink);
+  /* No border. It carried --pf-line, which in light mode drew a pale outline around a dark
+     chip — the edge of the wrong plane. Contrast and the shadow do the work. */
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: var(--pf-shadow-md);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.pf-rail-btn:hover::after,
+.pf-rail-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ---- Type ----------------------------------------------------------------
+   The admin ships Inter; the site dropped downloaded fonts for the visitor's own
+   system faces, so the two were drawn in different typefaces. Unfold funnels every
+   rule through --font-sans (and Tailwind's --default-font-family), so redefining
+   those two is the whole change — no per-element overrides, and nothing to keep in
+   step as Unfold's markup moves.
+
+   It also removes a font Unfold would otherwise fetch, which matters here for the
+   same reason it did on the public pages: nothing should have to be downloaded or
+   collected for a page to render correctly.
+
+   NOTE: this repeats the stack declared in templates/site_base.html and
+   core/templates/core/landing.html. Those two already carry the trap that nothing
+   tests they agree; this is the third place, and the admin is the one that will be
+   noticed last. Change all three together.
+   -------------------------------------------------------------------------- */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
+  --default-font-family: var(--font-sans);
+}
+
+/* The empty state now lives inside the table (see templates/admin/change_list_results.html),
+   so its own card border and radius would draw a second box inside the table's. Strip them
+   and let the table's edge be the only one. */
+#result_list .empty-results-cell > div {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+}
+
+/* Pagination now rides in the toolbar row (templates/admin/change_list.html), pushed to the
+   far right so the search and its filter button keep the left. It arrives wearing the
+   sticky-footer styling it had at the bottom of the page — a blurred translucent bar with a
+   top border — none of which makes sense inline, so that is stripped back to plain. */
+/* The toolbar row: search, filter button and pagination all centred on one line. The
+   container already sets align-items: center, but the pagination arrives as a block with
+   its own line-height, so it needs to say so itself. */
+.changelist-pagination-inline {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  margin-left: auto !important;
+  font-size: 0.8125rem;
+  color: var(--pf-muted);
+}
+.changelist-pagination-inline > div {
+  gap: 0.5rem;
+  align-items: center;
+  line-height: 1;
+}
+.changelist-pagination-inline a:hover {
+  color: var(--pf-focus);
+}
+
+/* Page numbers were 13px links with no padding — a target a few pixels across. Each gets a
+   real hit area, which is also what lets the current page read as a pressed state rather
+   than just a different colour. */
+.changelist-pagination-inline .changelist-pagination > div {
+  padding: 0 !important;
+}
+.changelist-pagination-inline a,
+.changelist-pagination-inline .this-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  line-height: 1;
+}
+.changelist-pagination-inline a:hover {
+  background-color: color-mix(in srgb, var(--pf-focus) 10%, transparent);
+  color: var(--pf-focus);
+}
+.changelist-pagination-inline .this-page {
+  background-color: color-mix(in srgb, var(--pf-focus) 14%, transparent);
+  color: var(--pf-focus);
+  font-weight: 600;
+}
+.changelist-pagination-inline .showall {
+  margin-left: 0.5rem;
+}
+
+/* The save bar for editable lists: pinned to the bottom, so it is reachable without
+   scrolling past a hundred rows, and out of the way of "+ Add" at the top. */
+/* Stuck to the bottom of the viewport with rows passing underneath, so it has to be opaque
+   AND unlike everything it covers. Both obvious choices were wrong: --pf-page made it the
+   page colour, so it read as a button floating in space; --pf-surface made it the TABLE's
+   colour, so once you scrolled it merged into the rows behind it.
+   --pf-surface-raised is the plane that means "above the content" — right in dark, and still
+   wrong in light, where it is #fafafc against a white table: a ratio of 1.04, nothing. White
+   is the ceiling, so in LIGHT the bar has to step DOWN to separate and in DARK it steps UP.
+   Hence its own token rather than a plane: the two go in opposite directions. */
+/* The glass is doing nearly all the work now, so say what happens without it. Firefox can
+   have backdrop-filter disabled, and some low-power modes drop it: the fallback is a 22%
+   tint, which would leave the Save button sitting on row text. Solid bar in that case. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .changelist-save-bar {
+    background-color: var(--pf-overlay-bg) !important;
+  }
+}
+
+.changelist-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  /* Translucent and blurred, so the rows passing behind it stay legible as shapes: the bar
+     says "there is more below" by letting you see it, rather than by being an opaque lid.
+     Thin enough to read the rows through, with the blur doing the work the alpha no longer
+     does: at 58% a flat tint would let the text behind it fight the Save button, but 16px of
+     blur turns those rows into soft shapes, which is the whole signal — there is more here,
+     you just cannot read it through the bar. */
+  background-color: color-mix(in srgb, var(--pf-overlay-bg) 22%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.3);
+  backdrop-filter: blur(28px) saturate(1.3);
+  border: 1px solid var(--pf-divider);
+  border-radius: var(--border-radius, 6px);
+  box-shadow: 0 -4px 12px var(--pf-fade);
+}
+
+/* A bar with nothing in it is not a bar. It carries two controls and both can be absent: Save
+ * only exists for a list_editable model, and the bulk actions stay hidden until a row is
+ * ticked — so on an ordinary changelist you got an empty blurred strip under the table,
+ * announcing nothing.
+ *
+ * Decided in CSS rather than in the template because half the condition is a live client-side
+ * state: whether any row is checked. That is the same signal Unfold's own
+ * `group-has-[input.action-select:checked]` reveal already runs on, read here through :has()
+ * off the form, so the bar and its contents cannot disagree about whether there is anything
+ * to show.
+ *
+ * `> button` is the Save button specifically. Not just `button` — the hidden actions wrapper
+ * contains a Go button at all times, so a descendant test would call every bar non-empty. */
+.changelist-save-bar:not(:has(> button)) {
+  display: none;
+}
+#changelist-form:has(input.action-select:checked) .changelist-save-bar {
+  display: flex;
+}
+
+/* Rows-per-page. Sits to the right of the filter button and left of the pagination, so the
+   toolbar reads: what you are looking at, how it is filtered, how much of it, where you are.
+   Measured against the panel it sits on, not guessed. */
+.changelist-page-size {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  margin: 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--pf-muted);
+}
+.changelist-page-size-label {
+  margin-right: 0.375rem;
+}
+.changelist-page-size a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  line-height: 1;
+  color: var(--pf-muted);
+}
+.changelist-page-size a:hover {
+  background-color: color-mix(in srgb, var(--pf-focus) 10%, transparent);
+  color: var(--pf-focus);
+}
+.changelist-page-size a.is-current {
+  background-color: color-mix(in srgb, var(--pf-focus) 14%, transparent);
+  color: var(--pf-focus);
+  font-weight: 600;
+}
+/* Pagination takes the far right; everything that MODIFIES the query stays on the left. */
+.changelist-pagination-inline {
+  margin-left: auto !important;
+}
+
+/* Elided page links: first, last, a window around the current page, ellipsis for the gaps. */
+.changelist-page-links {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.changelist-page-links a,
+.changelist-page-links .is-current {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  line-height: 1;
+  color: var(--pf-muted);
+}
+.changelist-page-links a:hover {
+  background-color: color-mix(in srgb, var(--pf-focus) 10%, transparent);
+  color: var(--pf-focus);
+}
+.changelist-page-links .is-current {
+  background-color: color-mix(in srgb, var(--pf-focus) 14%, transparent);
+  color: var(--pf-focus);
+  font-weight: 600;
+}
+.changelist-page-links .is-gap {
+  padding: 0 0.25rem;
+  color: var(--pf-muted);
+}
+/* The row count is a caption for the table, not part of the pagination controls it used to
+   sit inside. Its own line above the table, aligned with the first column. */
+/* The caption and the paging controls share a line directly above the table: one says which
+   slice you are looking at, the others change it. The toolbar above keeps only the controls
+   that change WHAT is in the list — search and filters. */
+.changelist-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.changelist-total {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--pf-muted);
+}
+
+/* The cluster on the right: Show all, rows-per-page, page numbers. */
+.changelist-pagination {
+  gap: 0;
+}
+.changelist-pagination .showall {
+  color: var(--pf-focus);
+}
+
+/* The bulk-action bar, which appears fixed to the bottom of the viewport once rows are
+   selected. Unfold gives its wrapper `p-3`, so the teal bar lands 12px from the window edges
+   and directly on top of the sticky save bar — it reads as something wedged into the corner
+   of the screen rather than floating over the list.
+
+   More room on all four sides, and enough at the bottom to clear the save bar underneath it,
+   so both stay legible while a selection is active. The shadow is what sells it as floating;
+   without one, an opaque bar this size just looks like the page ends there. */
+/* Alpine writes `width: <table width>px` straight onto this element's style attribute, and
+   an inline style beats any rule that isn't !important — which is why padding on the wrapper
+   appeared to do nothing.
+   That width is KEPT: the bar lining up with the table it acts on is the point, and freeing
+   it just made it span the window. Only a ceiling is added, so it can never reach the
+   viewport edges even when the table itself does. */
+
+/* The bulk actions now sit inside the save bar, so they take the room and Save stays at the
+   right-hand end. Unfold sizes the inner block to the table's pixel width from Alpine; that
+   is meaningless here, where the bar already spans the list. */
+#changelist-actions {
+  width: auto !important;
+  margin: 0 !important;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The action bar keeps the accent in both themes. Unfold flips it to primary-500 in dark —
+   #5cb6be, a bright tint that is right as a small highlight and far too loud filling a bar
+   across the page. Same reasoning as the navigation rail: a brand colour that changes with
+   the operating system's theme has stopped being one. */
+#changelist-actions > div {
+  background-color: var(--color-primary-600) !important;
+}
+
+/* The checkbox itself is recessed, not the cell around it — the same reasoning that puts
+   form fields on --pf-field: a sunken plane reads as "act here". Recessing the whole column
+   was the first try and it drew a lane down the side of the table, which is a lot of
+   emphasis for a control you use occasionally.
+
+   Only the unchecked state: once ticked, Unfold fills it with the accent, and a well behind
+   a filled box would just muddy it.
+
+   The tick has to be hidden explicitly. Unfold renders `content: "check_small"` in ::after at
+   ALL times and hides it by colouring it the same white as the box — so recolouring the box
+   made the tick appear on every unchecked row. Transparent is the honest version of what
+   Unfold was doing by coincidence. */
+#result_list input.action-select:not(:checked) {
+  background-color: var(--pf-field) !important;
+  box-shadow: inset 0 1px 2px var(--pf-fade) !important;
+  border-color: var(--pf-line) !important;
+}
+#result_list input.action-select:not(:checked)::after {
+  color: transparent !important;
+}
+
+/* The dashboard's app groups. Unfold gives the wrapper base-50/base-800 and the rows inside
+   it white/base-900, which on this palette makes the CONTAINER lighter than the things it
+   contains — the ladder upside down, so a group reads as sitting on top of its own models.
+
+   The wrapper gets no fill at all. Painting it the page tone made it vanish, and a third
+   tone between the page and the rows measures 1.04:1 in light — there is simply no room for
+   three planes below white. So it goes back to being what it actually is: padding and a
+   heading. The visible object is the table of models, a surface card on the page, which is
+   the same grammar as a changelist. */
+#main div[class~="bg-base-50"][class~="rounded-default"]:has(table) {
+  background-color: transparent !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+/* The card's own edge, which now carries the whole boundary. */
+#main div[class~="bg-base-50"]:has(table) table {
+  border-color: var(--pf-line) !important;
+}
+#main tr.model-group,
+#main tr.model-group > td,
+#main tr.model-group > th {
+  background-color: var(--pf-surface) !important;
+}
+/* Every cell, not just the ones Unfold happens to put `border-b` on — some carry it and some
+   don't, so recolouring theirs left a line that stopped halfway across the row. And it was
+   base-100/base-800: #222730 on a #1e242e row in dark, which is the invisible-on-a-surface
+   trap again. Last row excluded; the card's own edge closes it. */
+#main div[class~="bg-base-50"]:has(table) tbody tr:not(:last-child) > td,
+#main div[class~="bg-base-50"]:has(table) tbody tr:not(:last-child) > th {
+  border-bottom: 1px solid var(--pf-divider) !important;
+}
+#main div[class~="bg-base-50"]:has(table) tbody tr:last-child > td,
+#main div[class~="bg-base-50"]:has(table) tbody tr:last-child > th {
+  border-bottom: 0 !important;
+}
+
+/* The group heading, shown only when the panel lists every app (the dashboard). Inside an
+   app the rail already names where you are, so repeating it above the list is a second
+   label for the same thing. */
+.pf-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 2.75rem 0 0.5rem;
+  padding: 0 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--pf-muted);
+}
+/* The rule runs beside the label and takes whatever width is left, so the label reads as the
+   start of a section rather than a caption under a line. `flex: 1` instead of a fixed width
+   because the panel is resizable and the names differ in length.
+
+   Same `--pf-divider` the search rule in this panel uses, on purpose. That token is a solid
+   measured value rather than a translucent one because a line on this surface disappeared in
+   dark mode when it was alpha-based; anything reused here inherits that fix instead of
+   repeating the bug. */
+.pf-section-title::after {
+  content: "";
+  flex: 1 1 auto;
+  border-top: 1px solid var(--pf-divider);
+}
+/* The first group sits at the top of the panel, so it needs no space above it — but it keeps
+   its rule, since that now belongs to the label rather than to the gap between groups. */
+.pf-section:first-child .pf-section-title {
+  margin-top: 0;
+}
+
+
+/* ---- Recent actions ------------------------------------------------------ */
+
+/* Unfold builds this as three planes: a `bg-base-50` module holding `bg-white` cards with a
+ * `border-base-100` rule inside each. Measured, those are 1.03:1 and 1.06:1 apart in light —
+ * one flat grey wearing three names — and in dark the card (base-900) is DARKER than the
+ * module (base-800) at 1.04:1, so the elevation runs backwards as well as invisibly.
+ *
+ * The fix is to stop stacking near-identical planes and keep one honest step. The module
+ * loses its background and becomes pure layout; each entry becomes an ordinary surface card
+ * on the page, with the same border, radius and shadow every other card in the admin uses.
+ * One step you can see beats three you cannot. */
+#recent-actions-module {
+  background-color: transparent !important;
+  padding: 0 !important;
+}
+
+#recent-actions-module .actionlist li {
+  background-color: var(--pf-surface) !important;
+  border-color: var(--pf-line) !important;
+  box-shadow: var(--pf-shadow-sm) !important;
+}
+
+/* The rule between the object and its timestamp sits ON the card, which is exactly the case
+ * --pf-divider exists for — base-100 on white was 1.13:1, and the dark side put base-800 on
+ * base-900 for 1.04:1, i.e. nothing. */
+#recent-actions-module .actionlist li > div + div {
+  border-top-color: var(--pf-divider) !important;
+}
+
+/* Recent actions belongs above the app list, not beside it: it is the shortest thing on the
+ * page and the most current, and in a 384px right column it forced the eye sideways before
+ * the apps had been read. Unfold lays the two out as `flex flex-col lg:flex-row`, so this is
+ * a matter of turning that row back into a column and ordering this block first.
+ *
+ * Done in CSS via `:has()` rather than by forking admin/index.html. The container carries no
+ * id, but it is the only element with #content-related as a direct child, so the selector is
+ * exact — and a rule that survives an Unfold upgrade is worth more here than a template that
+ * has to be re-merged with one. */
+div:has(> #content-related) {
+  flex-direction: column !important;
+  gap: 1.5rem;
+}
+
+#content-related {
+  order: -1;
+  width: 100% !important; /* was lg:w-96, which is meaningless once it spans the page */
+}
+
+/* Across the full width the entries lay out as a strip instead of a stack. `auto-fill` with a
+ * 16rem floor rather than a fixed count: the panel beside this is resizable, so the number of
+ * columns has to follow the space rather than assume it. */
+#recent-actions-module .actionlist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+
+#recent-actions-module .actionlist li {
+  margin-bottom: 0 !important; /* mb-3 spaced a stack; the grid gap does it now */
+}
+
+/* The account strip at the foot of the panel, lifted off it by TONE. The step is the whole
+ * point: a shadow and a border only describe an edge, they do not make something read as a
+ * different plane, and the first attempt here leaned on them over a 1.14:1 fill that was too
+ * small a move to see.
+ *
+ * 1.27:1 in light, 1.49:1 in dark. The numbers differ because they have to: white is the
+ * light-mode ceiling so the bar tints DOWN toward the page, while dark has room and goes up,
+ * and a 1px-scale move on a dark ground loses more than any lightness formula predicts. Equal
+ * numbers would not have looked like an equal step.
+ *
+ * How far it can go is set by the text, not by taste. The email renders in --pf-muted, and
+ * past base-700 in dark it drops under 4.5:1 — that is what caps the step, and it is why the
+ * muted ink is remixed below rather than the bar being pushed further. */
+.pf-panel-foot {
+  margin: 0 0.75rem 0.75rem;
+  border-radius: 10px;
+  background-color: var(--pf-chip-bg);
+  box-shadow: var(--pf-shadow-sm);
+  position: relative;
+  z-index: 1;
+}
+
+/* No line at all. Unfold draws a border-base-200 across the top here, which made sense when
+ * the strip spanned the panel; on something that floats free of all four edges a top rule is
+ * meaningless. The tone step and the shadow part it from the panel.
+ *
+ * Unfold's px-6 py-3 goes too: the inner clickable div cancels it with -mx-6 -my-3 and then
+ * re-applies its own, so leaving it in place means two elements fighting over one gap. */
+.pf-panel-foot > div {
+  border-top-width: 0 !important;
+  padding: 0 !important;
+  /* Carries the radius down. `inherit` takes the PARENT's computed value, and this element —
+     not .pf-panel-foot — is the clickable row's parent, so without this link the row
+     inherited 0 and the hover tint painted square corners over the rounded chip. */
+  border-radius: inherit;
+}
+
+/* The clickable row, made compact. min-h-[64px] set the old full-width bar's height; a
+ * floating chip is sized by its contents and its padding. Radius comes down the chain from
+ * .pf-panel-foot so the hover tint stops at the corners instead of squaring them off —
+ * inherited rather than repeated, so the two cannot drift apart. */
+.pf-panel-foot > div > div[x-on\:click] {
+  margin: 0 !important;
+  padding: 0.4375rem 0.5rem !important;
+  min-height: 0 !important;
+  gap: 0.5rem !important;
+  border-radius: inherit;
+}
+
+/* 38px is Unfold's default avatar and it set the height of the whole strip. */
+.pf-panel-foot [class~="h-[38px]"] {
+  height: 30px !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  font-size: 0.75rem;
+  background-color: var(--pf-avatar-bg) !important;
+}
+
+.pf-panel-foot .text-important {
+  font-size: 0.8125rem;
+  line-height: 1.3;
+}
+
+.pf-panel-foot .material-symbols-outlined {
+  font-size: 1.125rem;
+}
+
+/* The account menu is absolutely positioned against the strip with a hard-coded
+ * `bottom-[73px]`, which was the old bar's height. Anchoring it to the strip's own top edge
+ * keeps the gap right whatever the strip ends up measuring. */
+.pf-panel-foot nav {
+  bottom: calc(100% + 0.375rem) !important;
+  left: 0 !important;
+  right: 0 !important;
+}
+
+/* The email sits on the bar, not on the panel, so it is measured there: --pf-muted lands at
+ * 3.97:1 on the dark bar, under the 4.5 small text needs. Mixed toward the ink it clears in
+ * both modes (6.1:1 light, 4.9:1 dark) and still reads as secondary against the name, which
+ * is 13.6:1 / 8.6:1. Ink is the high-contrast end in BOTH themes, so one mix moves the right
+ * way in each without a per-mode value. */
+.pf-panel-foot .text-subtle {
+  color: color-mix(in srgb, var(--pf-muted) 75%, var(--pf-ink)) !important;
+}
+
+/* The hover tint has to answer to the bar's colour, not the panel's — bg-base-100 on a light
+ * bar was lighter than the bar itself, so hovering made it look like it lifted away. */
+.pf-panel-foot > div > div[x-on\:click] {
+  transition: background-color 150ms var(--pf-ease, ease);
+}
+.pf-panel-foot > div > div[x-on\:click]:hover,
+/* Alpine writes bg-base-100 onto this div while the account menu is open — a lighter value
+   than the bar, so without this the strip looked like it lifted off while the menu showed. */
+.pf-panel-foot > div > div[x-on\:click][class~="bg-base-100"] {
+  background-color: color-mix(in srgb, var(--pf-ink) 6%, var(--pf-chip-bg)) !important;
 }

@@ -60,8 +60,8 @@ _DOT_X = 18.0
 _LETTER = '<path d="M5.6 3.4V20.6"/><path d="M5.6 11.8h6a2 2 0 0 1 2 2V20.6"/>'
 
 
-def _mark(*, stroke: float, dot: float) -> str:
-    """The mark on a petrol tile, at one optical size.
+def _mark(*, stroke: float, dot: float, tile: bool = True) -> str:
+    """The mark, at one optical size — on a petrol tile unless `tile` is off.
 
     One drawing serves every size — that is the whole point of a letter here. What changes
     is weight: small sizes need more of it, the way a type family cuts a heavier face for
@@ -69,15 +69,21 @@ def _mark(*, stroke: float, dot: float) -> str:
     first things a 16px raster throws away.
 
     The dot sits *on* the baseline, so its centre has to rise as its radius grows.
+
+    `tile=False` drops the petrol square and leaves the bare letter. That variant exists to
+    be used as a CSS mask (see .pf-rail-logo), which reads only the alpha channel and takes
+    its colour from the stylesheet — so the one mark can sit on the admin's coloured rail and
+    still flip between light and dark, which a fixed-colour <img> could never do.
     """
     full_stop = (
         f'<circle cx="{_DOT_X}" cy="{round(_BASELINE - dot, 3)}" r="{dot}" '
         'fill="#ffffff" stroke="none"/>'
     )
+    backdrop = f'<rect width="32" height="32" rx="7" fill="{_MARK_COLOUR}"/>' if tile else ""
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-        f'<rect width="32" height="32" rx="7" fill="{_MARK_COLOUR}"/>'
-        f'<g transform="translate(4 4)" fill="none" stroke="#ffffff" stroke-width="{stroke}" '
+        + backdrop
+        + f'<g transform="translate(4 4)" fill="none" stroke="#ffffff" stroke-width="{stroke}" '
         'stroke-linecap="round" stroke-linejoin="round">' + _LETTER + full_stop + "</g></svg>"
     )
 
@@ -87,6 +93,9 @@ FAVICON_SVG = _mark(stroke=2.3, dot=1.5)
 
 # The browser tab, which renders at 16-20px. Same letter, more weight.
 FAVICON_SMALL_SVG = _mark(stroke=2.7, dot=1.75)
+
+# The bare letter, no tile — masked and recoloured by CSS on the admin's coloured rail.
+FAVICON_GLYPH_SVG = _mark(stroke=2.3, dot=1.5, tile=False)
 
 
 def favicon(request: HttpRequest) -> HttpResponse:
@@ -101,6 +110,15 @@ def favicon(request: HttpRequest) -> HttpResponse:
 def favicon_full(request: HttpRequest) -> HttpResponse:
     """The mark at its display weight — for app icons, avatars and social cards."""
     return HttpResponse(FAVICON_SVG, content_type="image/svg+xml")
+
+
+def favicon_glyph(request: HttpRequest) -> HttpResponse:
+    """The mark without its tile, for surfaces that supply their own colour.
+
+    Used as a CSS mask by the admin's navigation rail, which is filled with the primary
+    colour — the tiled mark would put a petrol square on a petrol bar and disappear.
+    """
+    return HttpResponse(FAVICON_GLYPH_SVG, content_type="image/svg+xml")
 
 
 def landing(request: HttpRequest) -> HttpResponse:

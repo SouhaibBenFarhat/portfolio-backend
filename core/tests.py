@@ -1,4 +1,6 @@
+import os
 import re
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -938,3 +940,342 @@ def test_the_admin_is_branded_as_the_product_not_the_repository():
     body = Client().get("/admin/login/").content.decode()
     assert "Hirees" in body
     assert "portfolio-backend" not in body
+
+
+@pytest.mark.django_db
+def test_every_sidebar_link_resolves():
+    """The sidebar is hand-written, so a renamed or unregistered model breaks it — and
+    because it renders on every admin page, that breaks the whole admin, not one link.
+    reverse_lazy defers the failure to render time, so force each one here instead."""
+    from django.conf import settings
+
+    groups = settings.UNFOLD["SIDEBAR"]["navigation"]
+    links = [str(item["link"]) for group in groups for item in group["items"]]
+    assert len(links) == 14, "a group changed — check the sidebar still covers what it should"
+    assert all(link.startswith("/admin/") for link in links)
+
+
+@pytest.mark.django_db
+def test_the_sidebar_covers_every_model_an_operator_edits():
+    """The sidebar is one group per app listing exactly what that app registers, so nothing
+    may be absent. An earlier version hid Sites, Groups and OAuth tokens as noise; a map that
+    quietly omits things is the same dishonesty as one that points somewhere it doesn't go."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    missing = {
+        f"{m._meta.app_label}.{m._meta.model_name}"
+        for m in django_admin.site._registry
+        if f"/admin/{m._meta.app_label}/{m._meta.model_name}/" not in listed
+    }
+    assert missing == set(), f"registered but not in the sidebar: {sorted(missing)}"
+
+
+@pytest.mark.django_db
+def test_every_sidebar_group_has_a_rail_icon():
+    """Each group is a button on the icon rail, and the icon is all the button shows. A
+    group added without one falls back to a generic circle — indistinguishable from its
+    neighbours, which defeats the point of a rail."""
+    from django.conf import settings
+
+    groups = settings.UNFOLD["SIDEBAR"]["navigation"]
+    icons = [group.get("icon") for group in groups]
+    assert all(icons), "every sidebar group needs an icon for the rail"
+    assert len(set(icons)) == len(icons), "two groups share an icon — they'd be identical"
+
+
+@pytest.mark.django_db
+def test_the_tile_less_mark_is_served_for_the_rail():
+    """The rail is filled with the primary colour, so the tiled favicon would be a petrol
+    square on a petrol bar. The glyph variant carries no tile and is recoloured by CSS."""
+    response = Client().get("/favicon-glyph.svg")
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert response["Content-Type"] == "image/svg+xml"
+    assert "<rect" not in body, "the glyph variant must not carry the tile"
+    assert "M5.6 3.4V20.6" in body, "same letter as the tiled mark"
+
+
+@pytest.mark.django_db
+def test_every_sidebar_model_is_themed_and_searchable():
+    """Everything the sidebar points at has to look and behave like the rest of the admin.
+    Two of these are allauth's own registrations, which arrive as plain django.contrib
+    ModelAdmins — unstyled, and in EmailAddress's case unsearchable — so they are
+    re-registered in core.admin. This fails if a third-party model is added to the sidebar
+    without the same treatment.
+
+    Filters are NOT required: Group has a name and a permissions m2m and nothing worth
+    filtering on, and demanding one everywhere would mean inventing filters to satisfy a
+    test. Search is different — every list benefits from it."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+    from unfold.admin import ModelAdmin as UnfoldModelAdmin
+
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    for model, model_admin in django_admin.site._registry.items():
+        opts = model._meta
+        if f"/admin/{opts.app_label}/{opts.model_name}/" not in listed:
+            continue
+        assert isinstance(model_admin, UnfoldModelAdmin), f"{opts} is not themed"
+        assert model_admin.search_fields, f"{opts} has no search box"
+
+
+# --- Environment-aware URLs ------------------------------------------------
+
+
+def test_no_url_setting_defaults_to_a_production_host():
+    """A default is what you get with NO environment, and the only environment with none is
+    a laptop. APP_URL defaulted to https://app.hirees.me, and LOGIN_REDIRECT_URL is APP_URL —
+    so every sign-in on localhost ended on the production dashboard.
+
+    Run in a subprocess with the environment stripped, because by the time settings are
+    imported here a default and an explicit value are indistinguishable. That is also why
+    this is a test and not a system check: a check cannot see which one it got.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import django, os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');"
+        "django.setup();"
+        "from django.conf import settings;"
+        "print('|'.join(f'{n}={getattr(settings, n)}' for n in settings.URL_SETTINGS))"
+    )
+    # A cleared environment, minus what Python itself needs to start.
+    env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "")}
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, env=env, check=True
+    )
+
+    for pair in result.stdout.strip().split("|"):
+        name, _, value = pair.partition("=")
+        assert any(host in value for host in ("localhost", "127.0.0.1")), (
+            f"{name} defaults to {value!r}. Defaults are for laptops; production sets its "
+            f"own value in render.yaml."
+        )
+
+
+@pytest.mark.django_db
+def test_localhost_urls_fail_the_checks_in_production():
+    """FRONTEND_URL kept its localhost default in production for weeks, because nothing
+    reads it until a social login has already failed — at which point the visitor was sent
+    to a page that exists only on a developer's machine. `manage.py check` runs during
+    Render's build, so this turns that class of bug into a failed deploy."""
+    from django.test import override_settings
+
+    from core.checks import check_urls_are_not_local_in_production
+
+    with override_settings(DEBUG=False, APP_URL="http://localhost:5173"):
+        ids = [error.id for error in check_urls_are_not_local_in_production(None)]
+    assert "core.E001" in ids
+
+    with override_settings(
+        DEBUG=False, APP_URL="https://app.hirees.me", FRONTEND_URL="https://app.hirees.me"
+    ):
+        ids = [error.id for error in check_urls_are_not_local_in_production(None)]
+    assert "core.E001" not in ids
+
+    # Silent while developing — the whole point is that localhost is correct there.
+    with override_settings(DEBUG=True, APP_URL="http://localhost:5173"):
+        assert check_urls_are_not_local_in_production(None) == []
+
+
+def test_the_api_docs_aim_at_the_environment_you_are_running():
+    """Swagger's "Try it out" fires at whichever server is listed first. With production
+    pinned at the top, requests sent from a developer's own /api/docs/ hit the live service —
+    including the rating PUT and the chat POST, which write.
+
+    Asserted against the committed spec rather than settings.SPECTACULAR_SETTINGS, because
+    Django's test runner forces DEBUG off while that list was ordered at import under the
+    real value. CI regenerates the spec with DEBUG=true, so localhost leads there — which is
+    also the copy a developer reads.
+    """
+    import yaml
+
+    servers = yaml.safe_load(Path("openapi.yaml").read_text())["servers"]
+    assert "localhost" in servers[0]["url"]
+    assert any("onrender.com" in server["url"] for server in servers)
+
+
+def test_the_error_redirect_follows_the_dashboard():
+    """FRONTEND_URL has one consumer and no host of its own, so it cannot drift from the
+    app it points into — which is exactly how it went wrong before."""
+    assert settings.FRONTEND_URL == settings.APP_URL
+    assert settings.HEADLESS_FRONTEND_URLS["socialaccount_login_error"].startswith(settings.APP_URL)
+
+
+def test_the_site_and_the_admin_read_one_palette():
+    """The tokens were declared in four places and drifted every time one changed. Both
+    ends now derive from core/tokens.py, so a change to the accent or the ink cannot move
+    one and leave the other."""
+    from core.tokens import DARK, LIGHT, site_css
+
+    css = site_css()
+    assert settings.UNFOLD["COLORS"]["primary"]["600"] == LIGHT["accent"]
+    assert settings.UNFOLD["COLORS"]["primary"]["500"] == DARK["accent"]
+    assert settings.UNFOLD["COLORS"]["font"]["default-light"] == LIGHT["text"]
+    assert settings.UNFOLD["COLORS"]["font"]["default-dark"] == DARK["text"]
+    assert f"--accent: {LIGHT['accent']}" in css
+    assert f"--text: {DARK['text']}" in css
+
+
+def test_the_rendered_tokens_carry_both_dark_mode_routes():
+    """Dark has to be emitted twice — a media query for the operating system and an
+    attribute for the toggle — because CSS cannot share one block between them. Losing
+    either breaks half the theming, silently."""
+    from core.tokens import site_css
+
+    css = site_css()
+    assert "@media (prefers-color-scheme: dark)" in css
+    assert ':root:not([data-theme="light"])' in css
+    assert ':root[data-theme="dark"]' in css
+
+
+@pytest.mark.django_db
+def test_the_public_pages_render_their_tokens_inline():
+    """No stylesheet: these pages must draw correctly on a cold instance with nothing
+    collected, which is why the tokens are inlined by a tag rather than served as a file."""
+    from core.tokens import LIGHT
+
+    for path in ("/", "/signin"):
+        body = Client().get(path).content.decode()
+        assert f"--accent: {LIGHT['accent']}" in body, f"{path} lost its tokens"
+        assert "{%" not in body and "{#" not in body, f"{path} leaked a template tag"
+
+
+# --- Rows per page ---------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_default_page_size_is_small_enough_to_paginate():
+    """Unfold's 100 meant most lists had exactly one page, which made the pagination
+    controls decorative. 24 fills a screen and leaves the paging meaningful."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+
+    from core.paging import DEFAULT_PAGE_SIZE
+
+    assert DEFAULT_PAGE_SIZE == 24
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    for model, model_admin in django_admin.site._registry.items():
+        opts = model._meta
+        assert f"/admin/{opts.app_label}/{opts.model_name}/" in listed, f"{opts} is unlisted"
+        assert model_admin.list_per_page == DEFAULT_PAGE_SIZE, f"{opts} opted out"
+
+
+@pytest.mark.django_db
+def test_choosing_a_page_size_sticks_across_tables():
+    """A page size is a property of how you read a table, not of the table — so it is stored
+    once, per operator, and every list follows it."""
+    from django.contrib.auth import get_user_model
+
+    from core.paging import SESSION_KEY
+
+    staff = get_user_model().objects.create_superuser(
+        "pager", "pager@example.com", "Zephyr-Vault-92"
+    )  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    client.get("/admin/auth/user/?per_page=96")
+    assert client.session[SESSION_KEY] == 96
+    # A different model entirely, with no parameter of its own.
+    other = client.get("/admin/core/profile/")
+    assert other.context["cl"].list_per_page == 96
+
+
+@pytest.mark.django_db
+def test_a_junk_page_size_falls_back_instead_of_breaking_the_page():
+    """The value arrives in a URL anyone can edit or a stale bookmark can carry. A broken
+    page size must never be able to break the page."""
+    from django.contrib.auth import get_user_model
+
+    from core.paging import DEFAULT_PAGE_SIZE
+
+    staff = get_user_model().objects.create_superuser("junk", "junk@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    for bad in ("nonsense", "-5", "99999", ""):
+        response = client.get(f"/admin/auth/user/?per_page={bad}")
+        assert response.status_code == 200, f"{bad!r} broke the changelist"
+        assert response.context["cl"].list_per_page == DEFAULT_PAGE_SIZE
+
+
+@pytest.mark.django_db
+def test_the_page_size_is_not_treated_as_a_filter():
+    """Anything in the query string the admin doesn't recognise is treated as a field
+    lookup, so without stripping this one, ?per_page=48 raised IncorrectLookupParameters —
+    the admin's error page — instead of paginating."""
+    from django.contrib.auth import get_user_model
+
+    staff = get_user_model().objects.create_superuser("filt", "filt@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    response = client.get("/admin/auth/user/?per_page=48&is_staff__exact=1")
+    assert response.status_code == 200
+    assert response.context["cl"].list_per_page == 48
+
+
+@pytest.mark.django_db
+def test_switching_size_keeps_the_search_and_drops_the_page_number():
+    """Losing your filters because you asked for more rows would make the control worse than
+    useless. The page number goes, though: page 7 of a 24-row list is not page 7 of a 96."""
+    from django.contrib.auth import get_user_model
+
+    staff = get_user_model().objects.create_superuser("keep", "keep@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    client = Client()
+    client.force_login(staff)
+
+    body = client.get("/admin/auth/user/?q=demo&p=3").content.decode()
+    i = body.find("changelist-page-size")
+    control = body[i : i + 800]
+    assert "q=demo" in control, "the search was dropped"
+    assert "p=3" not in control, "the page number was carried over"
+
+
+@pytest.mark.django_db
+def test_the_caption_matches_the_rows_actually_on_the_page():
+    """The caption is computed from cl.result_list, and this asserts that against the rows
+    the page really renders — the two disagreeing is exactly the bug that looks like the
+    admin lying to you about what it is showing."""
+    import re
+
+    from django.contrib.auth import get_user_model
+
+    from chat.models import LLMCredential
+
+    staff = get_user_model().objects.create_superuser("cap", "cap@example.com", "Zephyr-Vault-92")  # noqa: S106 — test-only
+    for i in range(30):
+        LLMCredential.objects.create(provider="mistral", label=f"k{i}", api_key=f"sk-{i}")
+
+    client = Client()
+    client.force_login(staff)
+    body = client.get("/admin/chat/llmcredential/?per_page=24").content.decode()
+
+    rows = body.count('class="data-row')
+    caption = re.search(r'changelist-total">([^<]+)', body).group(1)
+    caption = " ".join(caption.split())
+
+    assert rows == 24, f"page rendered {rows} rows"
+    assert caption == "Showing 1 to 24 of 30 API credentials", caption
+
+    # Second page: the range moves, the total does not.
+    body = client.get("/admin/chat/llmcredential/?per_page=24&p=2").content.decode()
+    caption = " ".join(re.search(r'changelist-total">([^<]+)', body).group(1).split())
+    assert body.count('class="data-row') == 6
+    assert caption == "Showing 25 to 30 of 30 API credentials", caption

@@ -1,0 +1,42 @@
+{% comment %}
+Overrides unfold/helpers/add_link.html.
+
+Unfold ships this as a 38px circle containing nothing but a "+", with the action hidden in a
+`title` attribute. A round icon button is for something whose meaning is obvious from its
+shape — this one is the primary action on the page, and it was the only control that made
+you hover to find out what it did, or guess.
+
+So: an ordinary button, with the "+" kept and the name of the thing beside it. The label
+comes from the model's own `verbose_name` (`capfirst`, not `title`, so "API credential"
+keeps its capitals instead of becoming "Api Credential"), which means it reads correctly for
+every model without any per-model configuration.
+
+The colours are Unfold's own utility classes on purpose — bg-primary-600 is the site accent
+via settings.UNFOLD["COLORS"], so this follows a retheme rather than pinning a value here.
+{% endcomment %}
+{% load i18n admin_urls %}
+
+{% if cl %}
+    {% url cl.opts|admin_urlname:"add" as add_url %}
+    {% with entity=cl.opts.verbose_name %}
+        {% blocktranslate asvar title %}Add {{ entity }}{% endblocktranslate %}
+    {% endwith %}
+{% else %}
+    {% url opts|admin_urlname:"add" as add_url %}
+    {% with entity=opts.verbose_name %}
+        {% blocktranslate asvar title %}Add {{ entity }}{% endblocktranslate %}
+    {% endwith %}
+{% endif %}
+
+{% if add_url %}
+    {% if cl.model_admin.show_add_link or adminform.model_admin.show_add_link %}
+        <div class="flex flex-row items-center">
+            <a href="{% add_preserved_filters add_url is_popup to_field %}"
+               class="addlink bg-primary-600 flex items-center gap-1.5 h-[38px] -my-1 px-3 rounded-default text-sm font-medium text-white whitespace-nowrap hover:bg-primary-600/80"
+               title="{{ title }}">
+                <span class="material-symbols-outlined md-18 text-white">add</span>
+                {% if cl %}{{ cl.opts.verbose_name|capfirst }}{% else %}{{ opts.verbose_name|capfirst }}{% endif %}
+            </a>
+        </div>
+    {% endif %}
+{% endif %}

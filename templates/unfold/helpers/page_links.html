@@ -1,0 +1,13 @@
+{% if pages %}
+    <div class="changelist-page-links">
+        {% for page in pages %}
+            {% if page.ellipsis %}
+                <span class="is-gap" aria-hidden="true">…</span>
+            {% elif page.current %}
+                <span class="is-current" aria-current="page">{{ page.number }}</span>
+            {% else %}
+                <a href="{{ page.url }}">{{ page.number }}</a>
+            {% endif %}
+        {% endfor %}
+    </div>
+{% endif %}

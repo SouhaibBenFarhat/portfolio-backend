@@ -1,0 +1,15 @@
+{% comment %}
+Rows-per-page, rendered by the {% templatetag openblock %} page_size {% templatetag closeblock %}
+tag in core/templatetags/theme.py. Kept as links so it works without JavaScript; the choice
+is stored in the session by core.paging, so it holds for every table until changed.
+{% endcomment %}
+{% if options %}
+    <div class="changelist-page-size" role="group" aria-label="Rows per page">
+        <span class="changelist-page-size-label">Rows</span>
+        {% for option in options %}
+            <a href="{{ option.url }}"
+               class="{% if option.current %}is-current{% endif %}"
+               {% if option.current %}aria-current="true"{% endif %}>{{ option.size }}</a>
+        {% endfor %}
+    </div>
+{% endif %}

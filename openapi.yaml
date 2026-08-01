@@ -515,7 +515,7 @@ components:
       in: cookie
       name: sessionid
 servers:
-- url: https://portfolio-backend-2huw.onrender.com
-  description: Production
 - url: http://localhost:8000
   description: Local development
+- url: https://portfolio-backend-2huw.onrender.com
+  description: Production
