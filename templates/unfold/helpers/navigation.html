@@ -1,0 +1,97 @@
+{% comment %}
+Two-column admin navigation: a narrow icon rail, and a panel showing the items of whichever
+rail section is selected. Overrides unfold/helpers/navigation.html — the project templates
+directory is ahead of app dirs in TEMPLATES["DIRS"], so this file wins over the package's.
+
+Unfold ships a single column: every group and every item stacked in one list. With five
+groups and eleven items that is a wall you read past rather than a thing you navigate. The
+rail turns the top level into five targets you aim at, and the panel only ever shows one
+group's items.
+
+WHICH SECTION IS OPEN. Rendered server-side from the current URL: the one-line loop below
+prints the slug of the group holding the active page, or nothing, and `|| '<first>'` in the
+JavaScript then falls back to the first section — which is what opens the sidebar sensibly on
+pages that belong to no group, like the dashboard.
+
+Each rail icon is a LINK to its group's first page rather than a toggle. Clicking a top-level
+section should take you somewhere; a rail that only reveals a list costs two clicks to go
+anywhere. The page it lands on is active, so the panel opens on that group on its own and the
+highlight follows without any client-side state changing hands.
+
+STYLING lives in core/static/core/unfold-overrides.css under `.pf-nav`, NOT in Tailwind
+classes here. Unfold ships a prebuilt stylesheet, and Tailwind only compiles the classes it
+saw at build time — so an invented utility like `w-[56px]` would simply not exist in the
+bundle and would silently do nothing. Semantic class names in our own sheet are the only
+reliable route, and they match how the rest of the admin theme is already overridden.
+{% endcomment %}
+{% load i18n unfold %}
+
+<nav id="nav-sidebar-inner" class="pf-nav" x-data="{ section: '{% for group in sidebar_navigation %}{% has_nav_item_active group.items as has_active %}{% if has_active and group.items %}{{ group.title|slugify }}{% endif %}{% endfor %}' || '{{ sidebar_navigation.0.title|slugify }}' }">
+
+    <div class="pf-rail">
+        <a href="{% url 'admin:index' %}" class="pf-rail-logo" aria-label="{% trans 'Dashboard' %}">
+            {% comment %}
+            Empty on purpose. The tile is this element's background and the letter is drawn
+            on its ::before as a mask over /favicon-glyph.svg — see .pf-rail-logo.
+            {% endcomment %}
+        </a>
+
+        {% for group in sidebar_navigation %}
+            {% if group.items %}
+                {% comment %}
+                A link to the group's first page, not a button that only swaps the panel.
+                Clicking a top-level section should take you somewhere — a rail that just
+                reveals a list makes you click twice to go anywhere. The page it lands on
+                is active, so the panel opens on that group by itself.
+                {% endcomment %}
+                <a href="{% with first=group.items.0 %}{% if first.link_callback %}{{ first.link_callback }}{% else %}{{ first.link }}{% endif %}{% endwith %}"
+                   class="pf-rail-btn"
+                   aria-label="{{ group.title }}"
+                   x-bind:class="section === '{{ group.title|slugify }}' && 'is-active'">
+                    <span class="material-symbols-outlined">{{ group.icon|default:"circle" }}</span>
+                </a>
+            {% endif %}
+        {% endfor %}
+
+        {# Unfold's own header carries this on mobile; the rail replaces that header. #}
+        <span class="pf-rail-close material-symbols-outlined xl:hidden!" x-on:click="sidebarToggle()">
+            close
+        </span>
+    </div>
+
+    <div class="pf-panel">
+        {% comment %}
+        Wrapped so the stylesheet has something of its own to aim at. Unfold's search box
+        carries only utility classes, and matching on those would break the day it gains or
+        loses one.
+        {% endcomment %}
+        <div class="pf-search">{% include "unfold/helpers/search.html" %}</div>
+
+        <div class="pf-sections">
+            {% for group in sidebar_navigation %}
+                {% if group.items %}
+                    <div class="pf-section" x-cloak x-show="section === '{{ group.title|slugify }}'">
+                        <ol class="pf-items">
+                            {% for item in group.items %}
+                                {% if item.has_permission %}
+                                    <li>
+                                        <a href="{% if item.link_callback %}{{ item.link_callback }}{% else %}{{ item.link }}{% endif %}"
+                                           class="pf-item {% if item.active %}is-active{% endif %}">
+                                            {% if item.icon %}
+                                                <span class="material-symbols-outlined md-18">{{ item.icon }}</span>
+                                            {% endif %}
+                                            <span>{{ item.title|safe }}</span>
+                                            {% include "unfold/helpers/app_list_badge.html" with item=item %}
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            {% endfor %}
+                        </ol>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+
+        {% include "unfold/helpers/navigation_user.html" %}
+    </div>
+</nav>

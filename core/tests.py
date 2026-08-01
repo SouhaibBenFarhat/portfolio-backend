@@ -1,4 +1,6 @@
+import os
 import re
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -975,11 +977,173 @@ def test_the_sidebar_covers_every_model_an_operator_edits():
 
 
 @pytest.mark.django_db
-def test_every_sidebar_group_is_collapsible():
-    """The sidebar opens as five headings, not eleven links. Unfold only renders the
-    chevron and the click handler when a group sets `collapsible`, so an added group that
-    forgets it silently stays permanently expanded and the sidebar drifts back to a list."""
+def test_every_sidebar_group_has_a_rail_icon():
+    """Each group is a button on the icon rail, and the icon is all the button shows. A
+    group added without one falls back to a generic circle — indistinguishable from its
+    neighbours, which defeats the point of a rail."""
     from django.conf import settings
 
     groups = settings.UNFOLD["SIDEBAR"]["navigation"]
-    assert all(group.get("collapsible") for group in groups)
+    icons = [group.get("icon") for group in groups]
+    assert all(icons), "every sidebar group needs an icon for the rail"
+    assert len(set(icons)) == len(icons), "two groups share an icon — they'd be identical"
+
+
+@pytest.mark.django_db
+def test_the_tile_less_mark_is_served_for_the_rail():
+    """The rail is filled with the primary colour, so the tiled favicon would be a petrol
+    square on a petrol bar. The glyph variant carries no tile and is recoloured by CSS."""
+    response = Client().get("/favicon-glyph.svg")
+    body = response.content.decode()
+    assert response.status_code == 200
+    assert response["Content-Type"] == "image/svg+xml"
+    assert "<rect" not in body, "the glyph variant must not carry the tile"
+    assert "M5.6 3.4V20.6" in body, "same letter as the tiled mark"
+
+
+@pytest.mark.django_db
+def test_every_sidebar_model_is_themed_and_searchable():
+    """Everything the sidebar points at has to look and behave like the rest of the admin.
+    Two of these are allauth's own registrations, which arrive as plain django.contrib
+    ModelAdmins — unstyled, and in EmailAddress's case unsearchable — so they are
+    re-registered in core.admin. This fails if a third-party model is added to the sidebar
+    without the same treatment."""
+    from django.conf import settings
+    from django.contrib import admin as django_admin
+    from unfold.admin import ModelAdmin as UnfoldModelAdmin
+
+    listed = {
+        str(item["link"])
+        for group in settings.UNFOLD["SIDEBAR"]["navigation"]
+        for item in group["items"]
+    }
+    for model, model_admin in django_admin.site._registry.items():
+        opts = model._meta
+        if f"/admin/{opts.app_label}/{opts.model_name}/" not in listed:
+            continue
+        assert isinstance(model_admin, UnfoldModelAdmin), f"{opts} is not themed"
+        assert model_admin.search_fields, f"{opts} has no search box"
+        assert model_admin.list_filter, f"{opts} has no filters"
+
+
+# --- Environment-aware URLs ------------------------------------------------
+
+
+def test_no_url_setting_defaults_to_a_production_host():
+    """A default is what you get with NO environment, and the only environment with none is
+    a laptop. APP_URL defaulted to https://app.hirees.me, and LOGIN_REDIRECT_URL is APP_URL —
+    so every sign-in on localhost ended on the production dashboard.
+
+    Run in a subprocess with the environment stripped, because by the time settings are
+    imported here a default and an explicit value are indistinguishable. That is also why
+    this is a test and not a system check: a check cannot see which one it got.
+    """
+    import subprocess
+    import sys
+
+    script = (
+        "import django, os; os.environ.setdefault('DJANGO_SETTINGS_MODULE','config.settings');"
+        "django.setup();"
+        "from django.conf import settings;"
+        "print('|'.join(f'{n}={getattr(settings, n)}' for n in settings.URL_SETTINGS))"
+    )
+    # A cleared environment, minus what Python itself needs to start.
+    env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "")}
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, env=env, check=True
+    )
+
+    for pair in result.stdout.strip().split("|"):
+        name, _, value = pair.partition("=")
+        assert any(host in value for host in ("localhost", "127.0.0.1")), (
+            f"{name} defaults to {value!r}. Defaults are for laptops; production sets its "
+            f"own value in render.yaml."
+        )
+
+
+@pytest.mark.django_db
+def test_localhost_urls_fail_the_checks_in_production():
+    """FRONTEND_URL kept its localhost default in production for weeks, because nothing
+    reads it until a social login has already failed — at which point the visitor was sent
+    to a page that exists only on a developer's machine. `manage.py check` runs during
+    Render's build, so this turns that class of bug into a failed deploy."""
+    from django.test import override_settings
+
+    from core.checks import check_urls_are_not_local_in_production
+
+    with override_settings(DEBUG=False, APP_URL="http://localhost:5173"):
+        ids = [error.id for error in check_urls_are_not_local_in_production(None)]
+    assert "core.E001" in ids
+
+    with override_settings(
+        DEBUG=False, APP_URL="https://app.hirees.me", FRONTEND_URL="https://app.hirees.me"
+    ):
+        ids = [error.id for error in check_urls_are_not_local_in_production(None)]
+    assert "core.E001" not in ids
+
+    # Silent while developing — the whole point is that localhost is correct there.
+    with override_settings(DEBUG=True, APP_URL="http://localhost:5173"):
+        assert check_urls_are_not_local_in_production(None) == []
+
+
+def test_the_api_docs_aim_at_the_environment_you_are_running():
+    """Swagger's "Try it out" fires at whichever server is listed first. With production
+    pinned at the top, requests sent from a developer's own /api/docs/ hit the live service —
+    including the rating PUT and the chat POST, which write.
+
+    Asserted against the committed spec rather than settings.SPECTACULAR_SETTINGS, because
+    Django's test runner forces DEBUG off while that list was ordered at import under the
+    real value. CI regenerates the spec with DEBUG=true, so localhost leads there — which is
+    also the copy a developer reads.
+    """
+    import yaml
+
+    servers = yaml.safe_load(Path("openapi.yaml").read_text())["servers"]
+    assert "localhost" in servers[0]["url"]
+    assert any("onrender.com" in server["url"] for server in servers)
+
+
+def test_the_error_redirect_follows_the_dashboard():
+    """FRONTEND_URL has one consumer and no host of its own, so it cannot drift from the
+    app it points into — which is exactly how it went wrong before."""
+    assert settings.FRONTEND_URL == settings.APP_URL
+    assert settings.HEADLESS_FRONTEND_URLS["socialaccount_login_error"].startswith(settings.APP_URL)
+
+
+def test_the_site_and_the_admin_read_one_palette():
+    """The tokens were declared in four places and drifted every time one changed. Both
+    ends now derive from core/tokens.py, so a change to the accent or the ink cannot move
+    one and leave the other."""
+    from core.tokens import DARK, LIGHT, site_css
+
+    css = site_css()
+    assert settings.UNFOLD["COLORS"]["primary"]["600"] == LIGHT["accent"]
+    assert settings.UNFOLD["COLORS"]["primary"]["500"] == DARK["accent"]
+    assert settings.UNFOLD["COLORS"]["font"]["default-light"] == LIGHT["text"]
+    assert settings.UNFOLD["COLORS"]["font"]["default-dark"] == DARK["text"]
+    assert f"--accent: {LIGHT['accent']}" in css
+    assert f"--text: {DARK['text']}" in css
+
+
+def test_the_rendered_tokens_carry_both_dark_mode_routes():
+    """Dark has to be emitted twice — a media query for the operating system and an
+    attribute for the toggle — because CSS cannot share one block between them. Losing
+    either breaks half the theming, silently."""
+    from core.tokens import site_css
+
+    css = site_css()
+    assert "@media (prefers-color-scheme: dark)" in css
+    assert ':root:not([data-theme="light"])' in css
+    assert ':root[data-theme="dark"]' in css
+
+
+@pytest.mark.django_db
+def test_the_public_pages_render_their_tokens_inline():
+    """No stylesheet: these pages must draw correctly on a cold instance with nothing
+    collected, which is why the tokens are inlined by a tag rather than served as a file."""
+    from core.tokens import LIGHT
+
+    for path in ("/", "/signin"):
+        body = Client().get(path).content.decode()
+        assert f"--accent: {LIGHT['accent']}" in body, f"{path} lost its tokens"
+        assert "{%" not in body and "{#" not in body, f"{path} leaked a template tag"

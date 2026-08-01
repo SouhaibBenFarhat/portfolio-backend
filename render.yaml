@@ -35,6 +35,11 @@ services:
         value: "https://souhaibbenfarhat.github.io,https://app.hirees.me"
       - key: APP_URL # where the backend redirects the browser after sign-in (the dashboard SPA)
         value: "https://app.hirees.me"
+      # Must be set here, not left to the code default: the default is localhost (safe for a
+      # laptop, useless in production), and core.checks fails `manage.py check` — which
+      # collectstatic runs during the build — if a localhost origin survives with DEBUG off.
+      - key: CSRF_TRUSTED_ORIGINS
+        value: "https://hirees.me,https://www.hirees.me,https://app.hirees.me"
       - key: DATABASE_URL # Postgres connection string, injected from the DB below
         fromDatabase:
           name: portfolio-db

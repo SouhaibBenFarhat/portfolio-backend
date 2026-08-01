@@ -7,7 +7,10 @@ rest; allauth's own plaintext SocialApp admin is hidden so credentials only ever
 the encrypted path.
 """
 
-from allauth.socialaccount.models import SocialApp
+from allauth.account.admin import EmailAddressAdmin as BaseEmailAddressAdmin
+from allauth.account.models import EmailAddress
+from allauth.socialaccount.admin import SocialAccountAdmin as BaseSocialAccountAdmin
+from allauth.socialaccount.models import SocialAccount, SocialApp
 from django.contrib import admin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -85,3 +88,36 @@ class ProfileAdmin(ModelAdmin):
     search_fields = ("handle", "user__email", "github_username")
     list_select_related = ("user",)
     readonly_fields = ("created_at", "updated_at")
+
+
+# --- allauth's own admins, re-registered ------------------------------------
+# allauth registers EmailAddress and SocialAccount with plain django.contrib ModelAdmins,
+# which render as the one unstyled corner of a themed admin — the same reason User and
+# Group are re-registered above. They only became visible enough to matter when the
+# sidebar started pointing at them by name.
+#
+# Subclassing allauth's classes rather than replacing them keeps whatever behaviour they
+# define; Unfold's ModelAdmin goes first in the bases so its templates win. Each also gains
+# the search box and filters every other changelist here has.
+admin.site.unregister(EmailAddress)
+admin.site.unregister(SocialAccount)
+
+
+@admin.register(EmailAddress)
+class EmailAddressAdmin(ModelAdmin, BaseEmailAddressAdmin):
+    """Which addresses an account holds, and which of them are confirmed."""
+
+    list_display = ("email", "user", "primary", "verified")
+    list_filter = ("verified", "primary")
+    search_fields = ("email", "user__email", "user__username")
+    list_select_related = ("user",)
+
+
+@admin.register(SocialAccount)
+class SocialAccountAdmin(ModelAdmin, BaseSocialAccountAdmin):
+    """Which provider a given account signs in through."""
+
+    list_display = ("user", "provider", "uid", "last_login", "date_joined")
+    list_filter = ("provider",)
+    search_fields = ("user__email", "user__username", "uid")
+    list_select_related = ("user",)

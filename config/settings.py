@@ -16,6 +16,8 @@ from django.templatetags.static import static
 from django.urls import reverse_lazy
 from dotenv import load_dotenv
 
+from core.tokens import ADMIN_COLORS
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load a local .env for development. Existing env vars win, so production values
@@ -156,14 +158,44 @@ CSRF_TRUSTED_ORIGINS = env_list(
 # plans/auth-multitenancy-plan.md for the roadmap.
 SITE_ID = 1
 
-# Where allauth redirects the browser after a social round-trip — the dashboard SPA's base.
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:4321")
+# --- Public URLs ----------------------------------------------------------------------
+# Every setting naming a host outside this service. They are together, and named in
+# URL_SETTINGS below, so that one list drives the system check and the tests rather than
+# three places each keeping their own idea of what counts as a URL setting.
+#
+# THE RULE, which is the file's own docstring applied properly: a default is what you get
+# with NO environment, and the only environment with none is a developer's laptop. So every
+# default here points at localhost, and production supplies the real value through
+# render.yaml. Both directions of getting this wrong were live in this file:
+#
+#   APP_URL defaulted to https://app.hirees.me, and LOGIN_REDIRECT_URL is APP_URL — so
+#   every sign-in on localhost ended on the production dashboard.
+#
+#   FRONTEND_URL defaulted to localhost and was NOT in render.yaml, so production used the
+#   laptop value: a social-login failure there redirected the visitor to
+#   http://localhost:4321/auth/error. It sat like that for weeks because nothing looks at
+#   this setting unless something has already gone wrong.
+#
+# core.checks now fails `manage.py check` when DEBUG is off and any of these still points
+# at localhost, so the second kind can't reach production again.
 
-# The dashboard SPA (a separate Render Static Site at app.hirees.me). The backend owns all
-# auth: after sign-in it redirects here, and the SPA — which has NO sign-in UI of its own —
-# gates on the backend session and bounces unauthenticated visitors back to /signin. Point
-# this at http://localhost:5173 for local SPA dev. See docs/auth.md.
-APP_URL = os.getenv("APP_URL", "https://app.hirees.me")
+# The dashboard SPA (a separate Render Static Site at app.hirees.me in production). The
+# backend owns all auth: after sign-in it redirects here, and the SPA — which has NO sign-in
+# UI of its own — gates on the backend session and bounces unauthenticated visitors back to
+# /signin. Vite's dev server port locally. See docs/auth.md.
+APP_URL = os.getenv("APP_URL", "http://localhost:5173")
+
+# Where allauth sends the browser when a social round-trip fails. Its only consumer is
+# HEADLESS_FRONTEND_URLS, which serves the SPA — so it DEFAULTS TO APP_URL rather than
+# carrying a host of its own. That is the fix for how it broke: an independent setting that
+# nothing reads until something else has gone wrong will keep whatever value it was born
+# with, and nobody will notice. Tied to APP_URL it cannot drift, and production needs no
+# extra variable. Override it only if the error page ever lives somewhere else.
+FRONTEND_URL = os.getenv("FRONTEND_URL", APP_URL)
+
+# Read by core.checks and by the tests. Add a URL setting to this list when you add one.
+URL_SETTINGS = ("FRONTEND_URL", "APP_URL")
+URL_LIST_SETTINGS = ("CORS_ALLOWED_ORIGINS", "CSRF_TRUSTED_ORIGINS")
 
 AUTHENTICATION_BACKENDS = [
     "django.contrib.auth.backends.ModelBackend",  # admin / staff login
@@ -379,52 +411,11 @@ UNFOLD = {
     # accent (--accent #1f6f78), primary-500 the dark-mode one (dark --accent #5cb6be);
     # the base scale runs from the site's warm off-whites (--bg, --line) into its
     # dark blue-grays (--line/--surface/--bg in dark mode).
-    "COLORS": {
-        # Derived from the site's tokens, with the light/dark plane deltas widened:
-        # the site's literal values (#faf8f4 vs #ffffff, #14171c vs #0d0f12) are close
-        # enough for small bordered cards, but across the admin's large flat bands
-        # (header, sidebar, footer) they read as one merged surface.
-        "base": {
-            # NOTE: base-50/base-950 are used by Unfold internally for row striping and
-            # hover tints, so they must stay near the surface tone — the page and field
-            # planes get their own literal values in core/static/core/unfold-overrides.css.
-            "50": "#f8f5ef",  # subtle tint (zebra rows, hovers) — a whisper off white
-            "100": "#eee8da",
-            "200": "#d8cfba",  # borders — must be visible, not a whisper
-            "300": "#c0b8a6",
-            "400": "#99a0ac",  # site dark --muted
-            "500": "#7c828e",
-            "600": "#5b616d",  # site --muted: quiet body text
-            "700": "#3a4049",
-            "800": "#333c49",  # dark-mode borders
-            "900": "#1e242e",  # dark surfaces — a full step above the page, not a hint
-            "950": "#13171e",  # the dark page — a step below the surfaces, not pitch black
-        },
-        "primary": {
-            "50": "#eef7f8",
-            "100": "#d8edef",
-            "200": "#b9dfe3",
-            "300": "#93cfd5",
-            "400": "#78c3ca",
-            "500": "#5cb6be",  # site dark --accent
-            "600": "#1f6f78",  # site --accent: restrained petrol/teal
-            "700": "#1a5f68",
-            "800": "#14525a",
-            "900": "#0e4a51",  # site --accent-ink
-            "950": "#08272a",  # the site's dark solid-button ink
-        },
-        # Unfold's default body text is base-600 in light mode — our base-600 is the
-        # site's *muted* tone, too quiet for whole paragraphs. One step darker reads
-        # like the site's ink while captions/help text stay on the muted tones.
-        "font": {
-            "subtle-light": "var(--color-base-500)",
-            "subtle-dark": "var(--color-base-400)",
-            "default-light": "var(--color-base-700)",
-            "default-dark": "var(--color-base-300)",
-            "important-light": "var(--color-base-900)",
-            "important-dark": "var(--color-base-100)",
-        },
-    },
+    # The palette is core/tokens.py — the same module the public pages render their
+    # `:root` block from, so the accent, the ink and the type cannot drift between the two
+    # ends of the product. Only the neutral ramp is the admin's own; the reasoning for that
+    # lives with the values.
+    "COLORS": ADMIN_COLORS,
     # --- Sidebar --------------------------------------------------------------
     # Without this, Unfold lists every registered model grouped by Django app, alphabetically.
     # That produced a sidebar nobody could read: "users", "email addresses", "social accounts"
@@ -440,12 +431,15 @@ UNFOLD = {
     #                                     email addresses and several linked providers
     #   Email addresses / Linked providers = allauth's records hanging off an account
     #
-    # THE TRADE-OFF: a hand-written list does not grow by itself. A newly registered model is
-    # invisible here until it's added below — which is why `show_all_applications` stays on,
-    # so there is always a complete list one click away rather than a model that seems to have
-    # vanished. Deliberately left out of the groups: auth.Group (no roles here — the only
-    # accounts are the owner's), sites.Site (allauth requires SITE_ID but nothing edits it),
-    # and socialaccount.SocialToken (raw OAuth tokens; reading them helps nobody).
+    # THE TRADE-OFF: a hand-written list does not grow by itself, so a newly registered model
+    # would be invisible until someone adds it here. Unfold's "All applications" link was the
+    # first answer to that and it was removed: with only three models outside the groups it
+    # printed the same list a second time, which is noise rather than a safety net. The guard
+    # is now a test — core.tests.test_the_sidebar_covers_every_model_an_operator_edits pins
+    # exactly which models are absent, so registering a fourth without placing it turns CI red
+    # rather than quietly hiding it. Deliberately left out: auth.Group (no roles here — the
+    # only accounts are the owner's), sites.Site (allauth requires SITE_ID but nothing edits
+    # it), and socialaccount.SocialToken (raw OAuth tokens; reading them helps nobody).
     #
     # Every group is `collapsible`, so the sidebar opens as five headings rather than eleven
     # links: click one and its items unfold beneath it. Unfold expands whichever group holds
@@ -458,12 +452,12 @@ UNFOLD = {
     # 403 rather than a leak. Worth revisiting the day staff means more than one person.
     "SIDEBAR": {
         "show_search": True,
-        "show_all_applications": True,  # the escape hatch for anything not listed below
+        "show_all_applications": False,  # see the note above on what guards the list instead
         "navigation": [
             {
                 "title": "Tenants",
+                "icon": "groups",
                 "separator": True,
-                "collapsible": True,
                 "items": [
                     {
                         "title": "Pages",
@@ -479,8 +473,8 @@ UNFOLD = {
             },
             {
                 "title": "What the assistant knows",
+                "icon": "menu_book",
                 "separator": True,
-                "collapsible": True,
                 "items": [
                     {
                         "title": "Documents",
@@ -496,8 +490,8 @@ UNFOLD = {
             },
             {
                 "title": "Chat",
+                "icon": "forum",
                 "separator": True,
-                "collapsible": True,
                 "items": [
                     {
                         "title": "Conversations",
@@ -518,8 +512,8 @@ UNFOLD = {
             },
             {
                 "title": "Sign-in",
+                "icon": "login",
                 "separator": True,
-                "collapsible": True,
                 "items": [
                     {
                         "title": "Social login apps",
@@ -540,8 +534,8 @@ UNFOLD = {
             },
             {
                 "title": "Keys",
+                "icon": "key",
                 "separator": True,
-                "collapsible": True,
                 "items": [
                     {
                         "title": "API credentials",
@@ -598,10 +592,21 @@ SPECTACULAR_SETTINGS = {
         "drf_spectacular.hooks.postprocess_schema_enums",
         "chat.schema.add_chat_stream_path",
     ],
-    "SERVERS": [
-        {"url": "https://portfolio-backend-2huw.onrender.com", "description": "Production"},
-        {"url": "http://localhost:8000", "description": "Local development"},
-    ],
+    # Ordered by environment, because Swagger UI's "Try it out" fires at whichever server
+    # is FIRST. With production pinned at the top, every request sent from a developer's
+    # own /api/docs/ went to the live service — including the rating PUT and the chat POST,
+    # which write. The docs should aim at the thing you are running.
+    "SERVERS": (
+        [
+            {"url": "http://localhost:8000", "description": "Local development"},
+            {"url": "https://portfolio-backend-2huw.onrender.com", "description": "Production"},
+        ]
+        if DEBUG
+        else [
+            {"url": "https://portfolio-backend-2huw.onrender.com", "description": "Production"},
+            {"url": "http://localhost:8000", "description": "Local development"},
+        ]
+    ),
 }
 
 # --- Logging ---------------------------------------------------------------

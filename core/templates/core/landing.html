@@ -1,4 +1,4 @@
-<!doctype html>
+{% load theme %}<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -27,119 +27,7 @@
 <meta name="twitter:description" content="A portfolio page with an assistant recruiters can actually ask.">
 <meta name="twitter:image" content="{{ og_image }}">
 <style>
-/* ---------------------------------------------------------------------------
-   Design tokens — lifted from the portfolio site (src/styles/global.css) so
-   this page reads as the same product. Warm off-white, near-black ink, one
-   restrained petrol accent, hairline borders. No gradients, no glows: depth
-   comes from the plane system (page → surface) and hairlines only.
-   --------------------------------------------------------------------------- */
-:root {
-  /* ---- Elevation ---------------------------------------------------------
-     One rule in both themes: a step up is a step away from the page, toward --lift.
-     Every plane is derived from those two, so a new surface is a new percentage on
-     this scale — not a colour picked once for light and then again, by eye, for dark.
-
-     Light used to break the rule. Its page was #faf8f4 and its card #ffffff, which
-     spent the whole range in one step and left anything raised *on* a card with
-     nowhere above it to go — it came out the same white as the card beneath it,
-     separated only by a border and a shadow, while the same element in dark climbed
-     an obvious tone step. The page moved down to buy the missing step back.
-
-     The stops differ per theme on purpose: light fits its ladder into the narrow band
-     between a warm off-white and pure white, so its fraction is large; dark spans a
-     far wider range and needs a small one. Equal percentages would hand light three
-     tones nobody can tell apart. Keep this block in step with templates/site_base.html
-     and templates/socialaccount/signup.html — the three token blocks are still copies. */
-  --plane: #f0ebe0;   /* the page — the least elevated thing on screen */
-  --lift: #ffffff;    /* what "up" means in this theme */
-  --step: 55%;        /* where the middle plane sits between the two */
-  --e0: var(--plane);
-  --e1: color-mix(in srgb, var(--plane), var(--lift) var(--step));
-  --e2: var(--lift);
-
-  /* Semantic names for the planes. Everything else uses these, never the rungs, so
-     the ladder can be retuned without touching a single component. */
-  --bg: var(--e0);       /* page, and inset wells: fields sit back down here */
-  --surface: var(--e1);  /* cards, header, panels */
-  --raised: var(--e2);   /* raised on a card: buttons, chips, bubbles */
-
-  --text: #16181d;
-  --muted: #5b616d;
-  --line: #e9e4db;
-  --accent: #1f6f78;
-  --accent-ink: #0e4a51;
-  --shadow-sm: 0 1px 2px rgba(22,24,29,.04), 0 1px 3px rgba(22,24,29,.06);
-  --shadow-md: 0 2px 4px rgba(22,24,29,.05), 0 6px 16px rgba(22,24,29,.08);
-  --shadow-lg: 0 8px 24px rgba(22,24,29,.10), 0 2px 6px rgba(22,24,29,.06);
-
-  /* Text that sits on the accent fill. The dark accent is bright, so it needs ink
-     rather than white to stay readable (the site makes the same swap). */
-  --on-accent: #ffffff;
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
-
-  /* Both faces come from the visitor's own system, so nothing is downloaded: no font files
-     to host, no @font-face, and no static-file dependency — which this page needs, since it
-     is built to render on its own with nothing collected.
-
-     Headings use the system serif (New York on Apple, falling back to Georgia elsewhere) and
-     body uses the system sans (SF Pro on Apple, Segoe UI on Windows, Roboto on Android).
-     templates/site_base.html declares the identical pair for /signin and every allauth page,
-     so a visitor moving from here into sign-up keeps the same wordmark and the same headings.
-     These two files are the only ones that declare these tokens and nothing tests that they
-     agree — change them together.
-
-     The trade is that this looks meaningfully different off Apple platforms, more so than
-     the sans does, because the fallbacks for a system serif vary far more widely. */
-  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
-  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
-  --font-display: var(--font-serif);
-  --font-sans: var(--font-system);
-
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* --- Dark palette ---------------------------------------------------------
-   Declared twice on purpose. CSS can't share one block between a media query and
-   a selector, and we need both: follow the operating system by default, but let an
-   explicit choice win. `:not([data-theme="light"])` is what allows someone on a
-   dark OS to force light mode.
-   ------------------------------------------------------------------------ */
-/* Dark restates only the three ladder inputs — the rungs, and every plane derived from
-   them, are declared once above. These reproduce the dark palette this replaced almost
-   exactly (surface #15171b against the old #14171c, raised identical): dark was already
-   doing the right thing, light was the mode that was broken. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --plane: #0d0f12;
-    --lift: #2d3035;
-    --step: 25%;
-    --text: #e8e9ec;
-    --muted: #99a0ac;
-    --line: #222730;
-    --accent: #5cb6be;
-    --accent-ink: #aee3e7;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
-    --shadow-md: 0 4px 14px rgba(0,0,0,.5);
-    --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-    --on-accent: #08272a;
-    --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-  }
-}
-:root[data-theme="dark"] {
-  --plane: #0d0f12;
-  --lift: #2d3035;
-  --step: 25%;
-  --text: #e8e9ec;
-  --muted: #99a0ac;
-  --line: #222730;
-  --accent: #5cb6be;
-  --accent-ink: #aee3e7;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
-  --shadow-md: 0 4px 14px rgba(0,0,0,.5);
-  --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-  --on-accent: #08272a;
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-}
+{% site_tokens %}
 
 *, *::before, *::after { box-sizing: border-box; }
 

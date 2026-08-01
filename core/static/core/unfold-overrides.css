@@ -15,18 +15,57 @@
   /* Page and field planes are literals, NOT base tokens: Unfold reuses base-50 /
    * base-950 internally for zebra stripes and hover tints, so tying the page to
    * them makes every other table row page-colored. */
-  --pf-page: #f6f1e8; /* warm page, one clear step below the white surfaces */
+  --pf-page: #f4f4f7; /* warm page, one clear step below the white surfaces */
   --pf-surface: #ffffff; /* the site's --surface */
   /* One step above the surface — elevation is a tone step, not a shadow.
    * White is the light-mode ceiling, so raised bars tint gently toward the page. */
-  --pf-surface-raised: #fbf9f5;
-  --pf-field: #f3eee4; /* fields as inset wells */
+  --pf-surface-raised: #fafafc;
+  --pf-field: #f0f0f4; /* fields as inset wells */
   --pf-line: var(--color-base-200);
+  /* A hairline for edges that separate planes rather than enclose them. */
+  --pf-line-soft: color-mix(in srgb, var(--pf-line) 28%, transparent);
+  /* The fade over content that scrolls under a sticky bar. */
+  --pf-fade: color-mix(in srgb, var(--pf-ink) 7%, transparent);
+  /* Its own value, well under --pf-fade: that one is an inset shadow inside a small
+   * control, this one is a band across the full width of the page, and the same
+   * alpha that reads as depth in a 2px well reads as a bruise at 200px wide. */
+  --pf-scroll-fade: color-mix(in srgb, var(--pf-ink) 2%, transparent);
+  /* A rule that has to be SEEN on a surface. Mixed from the ink, not from --pf-line:
+   * the line token is #222730 in dark and the surface it would sit on is #1e242e,
+   * four values apart — invisible. Ink inverts with the theme, so a fraction of it
+   * lands on the readable side in both. */
+  --pf-divider: color-mix(in srgb, var(--pf-ink) 7%, transparent);
+  --pf-shadow-panel:
+    1px 0 2px color-mix(in srgb, var(--pf-ink) 4%, transparent),
+    4px 0 12px color-mix(in srgb, var(--pf-ink) 5%, transparent);
   --pf-accent: var(--color-base-600);
   --pf-focus: var(--color-primary-600); /* site --accent in light mode */
   /* The site's --shadow-sm / --shadow-md (cards only — bars elevate by tone) */
   --pf-shadow-sm: 0 1px 2px rgba(22, 24, 29, 0.04), 0 1px 3px rgba(22, 24, 29, 0.06);
   --pf-shadow-md: 0 2px 4px rgba(22, 24, 29, 0.05), 0 6px 16px rgba(22, 24, 29, 0.08);
+  /* Ink, taken from the font tokens settings.UNFOLD["COLORS"]["font"] emits — which are
+   * the site's own --text and --muted. Aliased here so a rule can say "the ink" once
+   * instead of picking the light or dark variant at every call site. */
+  --pf-ink: var(--color-font-default-light);
+  --pf-muted: var(--color-font-subtle-light);
+  /* What sits ON the accent. primary-50 rather than white: it is the top of the same
+   * ramp the rail is filled from, so the two were chosen together. */
+  --pf-on-accent: var(--color-primary-50);
+  /* The rail's own elevation — thrown sideways onto the panel, which no other shadow
+   * here does, and tinted with the deepest petrol so it reads as the rail's shadow
+   * rather than a grey smudge. */
+  --pf-shadow-rail:
+    2px 0 4px color-mix(in srgb, var(--color-primary-950) 22%, transparent),
+    6px 0 16px color-mix(in srgb, var(--color-primary-950) 16%, transparent);
+  --pf-rail-bg: var(--color-primary-600);
+  --pf-rail-ink: var(--pf-on-accent);
+  --pf-rail-ink-dim: color-mix(in srgb, var(--pf-on-accent) 66%, transparent);
+  --pf-rail-line: color-mix(in srgb, var(--color-primary-950) 40%, transparent);
+  /* A tooltip has to sit ON the surface it explains, so it can't BE that surface —
+   * built from --pf-surface it came out white on a white panel. Dark chip in light
+   * mode; in dark mode the page is already dark, so it lifts instead. */
+  --pf-tooltip-bg: var(--color-base-900);
+  --pf-tooltip-ink: var(--color-base-50);
 }
 .dark {
   --pf-page: #13171e; /* dark page, one clear step below the surfaces */
@@ -34,9 +73,23 @@
   --pf-surface-raised: #272e3a; /* one step above the surface */
   --pf-field: #10141a; /* inset wells, slightly below the page */
   --pf-line: var(--color-base-800);
+  --pf-line-soft: color-mix(in srgb, var(--pf-line) 32%, transparent);
+  --pf-fade: color-mix(in srgb, var(--color-base-950) 55%, transparent);
+  --pf-scroll-fade: color-mix(in srgb, var(--color-base-950) 9%, transparent);
+  --pf-divider: color-mix(in srgb, var(--pf-ink) 9%, transparent);
+  /* Dark needs a touch more, since a shadow has less room to read. */
+  --pf-shadow-panel:
+    1px 0 2px color-mix(in srgb, var(--color-base-950) 45%, transparent),
+    4px 0 14px color-mix(in srgb, var(--color-base-950) 40%, transparent);
   --pf-focus: var(--color-primary-500); /* site --accent in dark mode */
   /* Slightly heavier than the site's light shadows, but soft — the tone step
    * and borders carry the separation; the shadow only feathers the edge. */
+  --pf-ink: var(--color-font-default-dark);
+  --pf-muted: var(--color-font-subtle-dark);
+  /* The rail keeps ONE colour across themes (see .pf-rail), so --pf-rail-* are not
+   * restated here — only the surfaces beneath the tooltip change. */
+  --pf-tooltip-bg: var(--pf-surface-raised);
+  --pf-tooltip-ink: var(--pf-ink);
   --pf-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.25);
   --pf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
@@ -65,7 +118,21 @@ body,
  * same way once you scroll). */
 #nav-sidebar-inner {
   background-color: var(--pf-surface) !important;
-  border-right: 1px solid var(--pf-line);
+}
+/* The sidebar has TWO right edges: this wrapper carries Unfold's own `border-r
+ * border-base-200`, and #nav-sidebar-inner sits inside it. Softening only the inner one
+ * changed nothing visible, because the line you actually see is this one — and having
+ * both drew 2px. The inner border is gone; this one is a hairline.
+ *
+ * !important because `border-r` is an Unfold utility class setting the same property,
+ * which is the only case this file uses it for. */
+#nav-sidebar {
+  border-right-color: var(--pf-line-soft) !important;
+  /* The panel is a surface lifted off the page, so it casts to the right the way the rail
+   * casts onto it — the same story told twice, at half the strength each step out. Mixed
+   * from the ink rather than a fixed black, so it stays a shadow in dark mode instead of
+   * a black bar against a nearly-black page. */
+  box-shadow: var(--pf-shadow-panel);
 }
 /* The header is two nested bands (#header-inner inside a bg-white/base-900
  * wrapper) — paint both, or the wrapper shows as a second header behind it.
@@ -95,6 +162,18 @@ body,
  * base-900/80) directly over the page; one step under the sidebar bars. */
 #main div[class~="lg:backdrop-blur-xs"] {
   background-color: var(--pf-surface) !important;
+}
+/* The fade above the sticky save bar. Not a box-shadow — Unfold draws it as a ::after
+ * gradient running from --color-base-100, which on the warm base scale is #eee8da: a
+ * solid tint, and against a white surface it reads as a smudge rather than a hint that
+ * content continues underneath. Rebuilt from the ink at low alpha, and shortened, so it
+ * says "there is more below" without drawing attention to itself. */
+/* NOT scoped to #main: the changelist's pagination bar uses the same class and sits in
+ * base.html's footer block, outside it. Scoped, this softened the change form's save bar
+ * and left every table's footer at full strength. */
+div[class~="lg:scrollable-top"]::after {
+  height: 0.5rem !important;
+  background-image: linear-gradient(to top, var(--pf-scroll-fade), transparent) !important;
 }
 
 /* Column headers sit on the surface; tint them one step toward the page so
@@ -158,4 +237,267 @@ body,
 #result_list[data-ordering-field="order"] th.column-order,
 #result_list[data-ordering-field="order"] td.field-order {
   display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Two-column navigation: an icon rail, and a panel of the selected section.
+   Markup in templates/unfold/helpers/navigation.html, which overrides Unfold's.
+
+   Written as plain rules on our own class names rather than Tailwind utilities,
+   because Unfold ships a PREBUILT stylesheet: Tailwind only compiles the classes
+   it saw at build time, so an invented utility like `w-[56px]` is simply absent
+   from the bundle and does nothing at all. Same reason this whole file exists.
+
+   Colours come from the plane variables defined at the top of this file, so the
+   rail follows the theme without naming a single literal.
+   --------------------------------------------------------------------------- */
+
+[x-cloak] { display: none !important; }
+
+.pf-nav {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+  min-height: 100svh;
+  background-color: var(--pf-surface);
+}
+
+/* ---- The rail ------------------------------------------------------------ */
+.pf-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  padding: 0.75rem 0;
+  /* Filled with the brand's petrol, so the top level is separated by colour rather than
+     by another tone of grey. That also sidesteps the light-mode ceiling: the panel beside
+     it is white and nothing can be raised above white, which is why tone alone could not
+     do this.
+
+     ONE colour in both themes, deliberately. The rail is the brand mark of the interface,
+     and a brand colour that changes with the operating system's theme stops being one. It
+     also means the white logo tile and the ink on it never need a second set of values.
+
+     Raised, not merely adjacent: the shadow falls to the right onto the panel, so the rail
+     reads as the layer on top. z-index is what lets it — without it the panel paints over
+     the shadow and the whole effect vanishes. */
+  position: relative;
+  z-index: 1;
+  background-color: var(--pf-rail-bg);
+  border-right: 1px solid var(--pf-rail-line);
+  box-shadow: var(--pf-shadow-rail);
+}
+
+/* The mark as a MASK, not an image: /favicon-glyph.svg is the bare letter with no tile,
+   and masking reads only its alpha, so the colour comes from `background-color` here and
+   flips with the theme. The tiled favicon would put a petrol square on a petrol bar and
+   vanish, and an <img> could never recolour itself. One drawing, two surfaces. */
+.pf-rail-logo {
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.625rem;
+  border-radius: 9px;
+  background-color: var(--pf-rail-ink);
+  box-shadow: var(--pf-shadow-sm);
+}
+/* The letter itself, masked so it takes the RAIL's colour and reads as cut out of the
+   tile. Drawn on ::before rather than on the link, because the link is now the tile —
+   one element can carry a background or a mask, not both. */
+.pf-rail-logo::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--pf-rail-bg);
+  -webkit-mask: url("/favicon-glyph.svg") center / 1.5rem 1.5rem no-repeat;
+  mask: url("/favicon-glyph.svg") center / 1.5rem 1.5rem no-repeat;
+}
+
+.pf-rail-btn {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pf-rail-ink-dim);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.pf-rail-btn:hover { color: var(--pf-rail-ink); background-color: color-mix(in srgb, var(--pf-rail-ink) 12%, transparent); }
+.pf-rail-btn.is-active { color: var(--pf-rail-ink); background-color: color-mix(in srgb, var(--pf-rail-ink) 20%, transparent); }
+/* The active section is named by colour and fill, not only by a marker, so it
+   still reads for anyone who can't separate the two accent tints. */
+.pf-rail-btn.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  width: 3px;
+  height: 1.5rem;
+  border-radius: 0 3px 3px 0;
+  background-color: var(--pf-rail-ink);
+}
+.pf-rail-btn { position: relative; }
+
+.pf-rail-close {
+  margin-top: auto;
+  color: var(--pf-rail-ink-dim);
+  cursor: pointer;
+}
+
+/* ---- The panel ----------------------------------------------------------- */
+.pf-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 0.75rem;
+}
+
+/* The command-palette trigger, sunk into the panel rather than raised off it. Unfold ships
+ * it as a white card with a drop shadow, which reads as something sitting ON the sidebar —
+ * but the sidebar is itself an elevated surface, and an input on a raised plane should go
+ * down, not up. It uses --pf-field, the same inset well as every form field, plus an inner
+ * shadow at the top edge, which is what actually sells depth: a fill alone just looks like
+ * a differently coloured box. */
+/* Parts the trigger from the list under it. On the wrapper rather than the control, so the
+ * rule runs the full width of the panel instead of stopping at the input's rounded edge.
+ *
+ * Inset to the input's own width rather than run wall to wall: a rule that reaches the
+ * panel edges reads as a structural division of the sidebar, and this only separates two
+ * things inside it.
+ *
+ * Unfold's wrapper inside this one carries mx-3 and mb-2.5. Both are zeroed and re-applied
+ * here, so one element owns the spacing — otherwise the side margins doubled and the gap
+ * above the rule came out twice the gap below it. */
+.pf-search {
+  margin: 0 0.75rem 0.625rem;
+  padding-bottom: 0.625rem;
+  border-bottom: 1px solid var(--pf-divider);
+}
+.pf-search > div {
+  margin: 0 !important;
+}
+
+.pf-search > div > div {
+  background-color: var(--pf-field) !important;
+  border-color: var(--pf-line) !important;
+  box-shadow: inset 0 1px 3px var(--pf-fade) !important;
+}
+/* Every child of that control ships its own background — the placeholder div carries
+ * dark:bg-base-900 and the shortcut key bg-base-50 / dark:bg-white/[.04] — so the well
+ * came out banded: a dark strip behind the icon, a lighter one behind the text, another
+ * behind the key. One plane means clearing all of them and letting the well show through.
+ *
+ * The panel is also narrower now that the rail takes a slice of it, so the placeholder was
+ * truncating mid-word; tighter padding and a smaller face buy the words back. */
+.pf-search > div > div > * {
+  background-color: transparent !important;
+}
+.pf-search > div > div > div {
+  padding-block: 0.375rem !important;
+  font-size: 0.8125rem !important;
+}
+/* The key keeps an edge — it is a key — but a hairline one, and no fill of its own. */
+.pf-search kbd {
+  border-color: var(--pf-line-soft) !important;
+}
+.pf-search > div > div:focus-within {
+  border-color: var(--pf-focus) !important;
+}
+
+.pf-sections {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pf-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  list-style: none;
+}
+
+.pf-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 2.25rem;
+  padding: 0 0.625rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color .15s ease, color .15s ease;
+}
+.pf-item:hover { background-color: color-mix(in srgb, var(--pf-focus) 6%, var(--pf-surface)); }
+.pf-item.is-active {
+  font-weight: 600;
+  color: var(--pf-focus);
+  background-color: color-mix(in srgb, var(--pf-focus) 12%, transparent);
+}
+.pf-item .material-symbols-outlined { flex: none; }
+
+/* Rail tooltips. The rail shows an icon and nothing else, so the name has to arrive on
+   hover — and the native `title` attribute is the wrong tool: it waits about a second,
+   can't be styled, and never appears on keyboard focus. This reads the accessible name
+   straight off aria-label, so there is one label serving both the tooltip and the screen
+   reader instead of two that can drift apart. */
+.pf-rail-btn::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: calc(100% + 0.625rem);
+  top: 50%;
+  transform: translateY(-50%) translateX(-2px);
+  z-index: 60;
+  padding: 0.3125rem 0.5rem;
+  border-radius: 6px;
+  background-color: var(--pf-tooltip-bg);
+  color: var(--pf-tooltip-ink);
+  border: 1px solid var(--pf-line);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: var(--pf-shadow-md);
+  transition: opacity .12s ease, transform .12s ease;
+}
+.pf-rail-btn:hover::after,
+.pf-rail-btn:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* ---- Type ----------------------------------------------------------------
+   The admin ships Inter; the site dropped downloaded fonts for the visitor's own
+   system faces, so the two were drawn in different typefaces. Unfold funnels every
+   rule through --font-sans (and Tailwind's --default-font-family), so redefining
+   those two is the whole change — no per-element overrides, and nothing to keep in
+   step as Unfold's markup moves.
+
+   It also removes a font Unfold would otherwise fetch, which matters here for the
+   same reason it did on the public pages: nothing should have to be downloaded or
+   collected for a page to render correctly.
+
+   NOTE: this repeats the stack declared in templates/site_base.html and
+   core/templates/core/landing.html. Those two already carry the trap that nothing
+   tests they agree; this is the third place, and the admin is the one that will be
+   noticed last. Change all three together.
+   -------------------------------------------------------------------------- */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
+  --default-font-family: var(--font-sans);
 }

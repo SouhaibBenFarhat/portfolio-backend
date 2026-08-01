@@ -360,6 +360,12 @@ class MessageInline(TabularInline):
 @admin.register(Conversation)
 class ConversationAdmin(ModelAdmin):
     list_display = ("id", "owner", "created_at", "updated_at", "rating_summary")
+    # "=id" is an EXACT match, not icontains: a UUID column can't be searched with LIKE on
+    # Postgres, so the usual prefix-free form would raise rather than find nothing. Searching
+    # message text is the useful half anyway — you remember what was said, not the thread id.
+    search_fields = ("=id", "messages__content")
+    list_filter = ("owner", "created_at")
+    list_select_related = ("owner",)
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = [MessageInline]
 
@@ -401,6 +407,7 @@ class TokenUsageAdmin(ModelAdmin):
         "quota_used",
     )
     list_filter = ("model", "period")
+    search_fields = ("model",)
     readonly_fields = ("model", "period", "input_tokens", "output_tokens", "updated_at")
 
     def has_add_permission(self, request):

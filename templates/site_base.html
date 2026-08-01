@@ -1,4 +1,4 @@
-{% comment %}
+{% load theme %}{% comment %}
 Shared shell for the whole auth surface — the sign-in hub (core/templates/core/signin.html)
 and every allauth page (templates/allauth/layouts/base.html, which all account templates
 extend). Everything shared lives here ONCE: design tokens, header (wordmark + theme toggle),
@@ -18,93 +18,7 @@ Pages fill:
 <link rel="icon" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/favicon-full.svg">
 <style>
-/* Design tokens — the landing page's palette, so every auth screen reads as one product. */
-:root {
-  /* ---- Elevation ---------------------------------------------------------
-     One rule in both themes: a step up is a step away from the page, toward --lift.
-     Every plane is derived from those two, so a new surface is a new percentage on
-     this scale — not a colour picked once for light and then picked again, by eye,
-     for dark.
-
-     Light used to break the rule. Its page was #faf8f4 and its card #ffffff, which
-     spent the whole range in one step and left anything raised *on* a card with
-     nowhere above it to go: the provider buttons came out the same white as the card
-     under them, separated only by a border and a shadow, while the same buttons in
-     dark climbed an obvious tone step. Elevation meant one thing in dark and another
-     in light. The page moved down to buy the missing step back.
-
-     The stops differ per theme on purpose. Light has to fit its whole ladder into the
-     narrow band between a warm off-white and pure white, so its fraction is large;
-     dark spans a far wider range and needs a small one. Equal percentages would hand
-     light three tones nobody can tell apart. */
-  --plane: #f0ebe0;   /* the page — the least elevated thing on screen */
-  --lift: #ffffff;    /* what "up" means in this theme */
-  --step: 55%;        /* where the middle plane sits between the two */
-  --e0: var(--plane);
-  --e1: color-mix(in srgb, var(--plane), var(--lift) var(--step));
-  --e2: var(--lift);
-
-  /* Semantic names for the planes. Everything else in the app uses these, never the
-     rungs, so the ladder can be retuned without touching a single component. */
-  --bg: var(--e0);       /* page, and inset wells: form fields sit back down here */
-  --surface: var(--e1);  /* cards, header, panels */
-  --raised: var(--e2);   /* raised on a card: the provider buttons */
-
-  --text: #16181d;
-  --muted: #5b616d;
-  --line: #e9e4db;
-  --accent: #1f6f78;
-  --accent-ink: #0e4a51;
-  --danger: #ce2c31;
-  --shadow-sm: 0 1px 2px rgba(22,24,29,.04), 0 1px 3px rgba(22,24,29,.06);
-  --shadow-md: 0 2px 4px rgba(22,24,29,.05), 0 6px 16px rgba(22,24,29,.08);
-  --shadow-lg: 0 8px 24px rgba(22,24,29,.10), 0 2px 6px rgba(22,24,29,.06);
-  --on-accent: #ffffff;
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 24%);
-  /* Both faces come from the visitor's own system, so nothing is downloaded: no font file to
-     host, no @font-face rule, and no dependency on collectstatic. That last part is
-     load-bearing — these pages have to render correctly on a cold instance with nothing
-     collected, which is why they can't reference static files at all.
-
-     Headings take the system serif, body the system sans — the same pair, resolved the same
-     way, as core/templates/core/landing.html. Keep the two files in step: they are the only
-     two that declare these tokens, and nothing tests that they agree.
-
-     This block briefly gave --font-display the sans stack, on the reasoning that marketing
-     gets a voice and product interface shouldn't. That drew the line in the wrong place. The
-     surface this file dresses — the landing's own header and footer, /signin, and every
-     allauth page — is all pre-login marketing; the sign-in card even sits beside a marketing
-     panel lifted from the landing. Splitting the two meant one wordmark in serif and the
-     identical wordmark one click later in sans. The product interface that should stay plain
-     is the signed-in dashboard, and that is a separate application in another repository. */
-  --font-system: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, system-ui, sans-serif;
-  --font-serif: ui-serif, 'New York', 'Iowan Old Style', Palatino, Georgia, serif;
-  --font-display: var(--font-serif);
-  --font-sans: var(--font-system);
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-}
-/* Dark only ever restates the three ladder inputs — the rungs, and every plane derived
-   from them, are declared once above. These values reproduce the dark palette this
-   replaced almost exactly (surface #15171b against the old #14171c, raised identical),
-   because dark was already doing the right thing; light was the mode that was broken. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --plane: #0d0f12; --lift: #2d3035; --step: 25%;
-    --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
-    --accent: #5cb6be; --accent-ink: #aee3e7; --danger: #ff9592;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-md: 0 4px 14px rgba(0,0,0,.5); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-    --on-accent: #08272a;
-    --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-  }
-}
-:root[data-theme="dark"] {
-  --plane: #0d0f12; --lift: #2d3035; --step: 25%;
-  --text: #e8e9ec; --muted: #99a0ac; --line: #222730;
-  --accent: #5cb6be; --accent-ink: #aee3e7; --danger: #ff9592;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.4); --shadow-md: 0 4px 14px rgba(0,0,0,.5); --shadow-lg: 0 10px 30px rgba(0,0,0,.6);
-  --on-accent: #08272a;
-  --raised-line: color-mix(in srgb, var(--line), var(--text) 34%);
-}
+{% site_tokens %}
 
 *, *::before, *::after { box-sizing: border-box; }
 html { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-text-size-adjust: 100%; }

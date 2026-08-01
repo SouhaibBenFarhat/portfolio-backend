@@ -4,7 +4,16 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import favicon, favicon_full, health, index, landing, me, signin
+from core.views import (
+    favicon,
+    favicon_full,
+    favicon_glyph,
+    health,
+    index,
+    landing,
+    me,
+    signin,
+)
 
 urlpatterns = [
     # The landing page owns the root; the JSON service descriptor moved to /api/.
@@ -16,6 +25,7 @@ urlpatterns = [
     path("favicon.svg", favicon),
     path("favicon.ico", favicon),  # browsers request this by default
     path("favicon-full.svg", favicon_full),  # the detailed mark, for app icons and avatars
+    path("favicon-glyph.svg", favicon_glyph),  # tile-less, for CSS masking on a coloured rail
     path("signin", signin, name="signin"),  # social sign-in / sign-up (the CTAs land here)
     path("admin/", admin.site.urls),
     path("ingest/", include("analytics_proxy.urls")),
