@@ -366,8 +366,11 @@ CHAT_SUGGESTIONS_MODEL = os.getenv("CHAT_SUGGESTIONS_MODEL", CHAT_MODEL)
 
 # --- Admin (Unfold theme) -------------------------------------------------
 UNFOLD = {
-    "SITE_TITLE": "portfolio-backend",
-    "SITE_HEADER": "portfolio-backend",
+    # The product's name, not the repository's. "portfolio-backend" is what this service is
+    # called in git and on Render; the thing an operator is looking at when they open /admin
+    # is hirees.me. SITE_HEADER is the sidebar heading, SITE_TITLE the browser tab.
+    "SITE_TITLE": "Hirees",
+    "SITE_HEADER": "Hirees",
     "SITE_ICON": "/favicon.svg",  # the service's own favicon route (core.views.favicon)
     # Match the portfolio site's design tokens (src/styles/global.css in the frontend
     # repo) so the admin reads as part of the same product. The site's two accent
